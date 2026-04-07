@@ -5,7 +5,11 @@ import { SidebarNav, BottomNav } from '@/components/Navigation'
 export const metadata: Metadata = {
   title: 'I M O R T A I S | Guild Admin Hub',
   description: 'Painel administrativo de batalhas ZvZ, presença e estatísticas da guilda I M O R T A I S no Albion Online.',
-  viewport: 'width=device-width, initial-scale=1',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

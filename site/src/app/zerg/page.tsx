@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { DateFilter } from '../../components/DateFilter'
 import { useSearchParams } from 'next/navigation'
@@ -23,7 +23,7 @@ function formatWeaponName(rawName: string) {
     .replace(/\b\w/g, c => c.toUpperCase()) 
 }
 
-export default function ZergHQPage() {
+function ZergHQContent() {
   const searchParams = useSearchParams()
   const days = parseInt(searchParams.get('days') || '0')
   
@@ -266,6 +266,14 @@ export default function ZergHQPage() {
 
       </div>
     </>
+  )
+}
+
+export default function ZergHQPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--cyan)' }}>Carregando dados da Zerg...</div>}>
+      <ZergHQContent />
+    </Suspense>
   )
 }
 

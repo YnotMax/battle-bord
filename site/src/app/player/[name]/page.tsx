@@ -245,7 +245,7 @@ function generateCoachAdvice(weapons: any[]) {
       icon: 'verified',
       color: '#10b981',
       title: 'Maestria Certificada T8 (Supera Média)',
-      text: `Absolutamente essencial. Você carrega a espinha dorsal nas vitórias usando [${pW.weapon}]! ${pW.relativePct > 0 ? \`Seu \${pW.compareLabel} é \${pW.relativePct}% MAIOR que a média dos outros jogadores que tentam usar essa arma.\` : ''}`
+      text: `Absolutamente essencial. Você carrega a espinha dorsal nas vitórias usando [${pW.weapon}]! ${pW.relativePct > 0 ? `Seu ${pW.compareLabel} é ${pW.relativePct}% MAIOR que a média dos outros jogadores que tentam usar essa arma.` : ''}`
     }
   }
 
@@ -254,7 +254,7 @@ function generateCoachAdvice(weapons: any[]) {
     icon: 'monitoring',
     color: 'var(--text-400)',
     title: 'Monitoramento Padrão Ativo',
-    text: `Você tem flutuado no meta confortavelmente usando [${pW.weapon}]. Seu impacto é consistente (${pWinRate}% WR). ${pW.relativePct > 0 ? \`Seu desempenho se destaca \${pW.relativePct}% acima da média do core.\` : ''}`
+    text: `Você tem flutuado no meta confortavelmente usando [${pW.weapon}]. Seu impacto é consistente (${pWinRate}% WR). ${pW.relativePct > 0 ? `Seu desempenho se destaca ${pW.relativePct}% acima da média do core.` : ''}`
   }
 }
 
@@ -400,7 +400,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                     const avgDamage = Math.round(w.damage / w.uses).toLocaleString()
                     const avgHeal = Math.round(w.healing / w.uses).toLocaleString()
 
-                    const albion2d_link = \`https://albiononline2d.com/pt/item/id/T8_\${w.rawWeapon.replace(/^T\\d_/, '').split('@')[0]}\`;
+                    const albion2d_link = `https://albiononline2d.com/pt/item/id/T8_${w.rawWeapon.replace(/^T\d_/, '').split('@')[0]}`;
                     
                     const isPositive = w.relativePct > 0;
                     
@@ -423,7 +423,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                           {w.healing > 0 ? avgHeal : '-'}
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <span className={\`badge badge-\${isPositive ? 'healer' : 'tank'}\`} style={{ display: 'inline-flex', padding: '4px 6px' }}>
+                          <span className={`badge badge-${isPositive ? 'healer' : 'tank'}`} style={{ display: 'inline-flex', padding: '4px 6px' }}>
                              {isPositive ? '+' : ''}{w.relativePct}% {w.compareLabel}
                           </span>
                         </td>
@@ -479,7 +479,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                  return (
                    <div key={match.battle_id} style={{ 
                      display: 'flex', padding: 12, borderBottom: '1px solid var(--border)',
-                     borderLeft: \`4px solid \${isWin ? '#10b981' : '#ef4444'}\`,
+                     borderLeft: `4px solid ${isWin ? '#10b981' : '#ef4444'}`,
                      background: isWin ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
                      gap: 12, alignItems: 'center'
                    }}>
