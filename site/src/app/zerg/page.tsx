@@ -2,35 +2,71 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { DateFilter } from '../../components/DateFilter'
+import { useSearchParams } from 'next/navigation'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Re-using the same function as Mentoria Global
+function formatWeaponName(rawName: string) {
+  if (!rawName) return "Desconhecida"
+  return rawName
+    .replace(/^T\d_/, '') 
+    .replace(/^2H_/, '')  
+    .replace(/^MAIN_/, '') 
+    .replace(/@\d+$/, '') 
+    .replace(/_/g, ' ')   
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase()) 
+}
+
 export default function ZergHQPage() {
+  const searchParams = useSearchParams()
+  const days = parseInt(searchParams.get('days') || '0')
+  
   const [loading, setLoading] = useState(true)
   const [roles, setRoles] = useState({ tank: 0, support: 0, healer: 0, melee: 0, range: 0 })
+  const [topWeapons, setTopWeapons] = useState<{name: string, p: number}[]>([])
   const [total, setTotal] = useState(0)
   const [localWinRate, setLocalWinRate] = useState(0)
+  const [totalBattles, setTotalBattles] = useState(0)
 
   useEffect(() => {
     async function loadComp() {
-      // Puxa as ultimas 5 batalhas
-      const { data: bData } = await sb.from('battles').select('id, result').order('start_time', { ascending: false }).limit(5)
+      setLoading(true)
+      
+      let queryBattles = sb.from('battles').select('id, result, start_time').order('start_time', { ascending: false })
+      
+      if (days > 0) {
+        const pastDate = new Date()
+        pastDate.setDate(pastDate.getDate() - days)
+        queryBattles = queryBattles.gte('start_time', pastDate.toISOString())
+      } else {
+        queryBattles = queryBattles.limit(10) // default para evitar sobrecarga se all
+      }
+
+      const { data: bData } = await queryBattles
+
       if (!bData || bData.length === 0) {
         setLoading(false)
         return
       }
 
+      setTotalBattles(bData.length)
+
       const wins = bData.filter(b => b.result === 'WIN').length
       setLocalWinRate(Math.round((wins / bData.length) * 100))
 
       const battleIds = bData.map(b => b.id)
-      const { data: pData } = await sb.from('player_stats').select('role').in('battle_id', battleIds)
+      const { data: pData } = await sb.from('player_stats').select('role, weapon').in('battle_id', battleIds)
 
       if (pData) {
         const counts = { tank: 0, support: 0, healer: 0, melee: 0, range: 0 }
+        const wCount: Record<string, number> = {}
+
         pData.forEach(p => {
           const r = (p.role || '').toLowerCase()
           if (r.includes('tank')) counts.tank++
@@ -38,14 +74,25 @@ export default function ZergHQPage() {
           else if (r.includes('heal')) counts.healer++
           else if (r.includes('melee')) counts.melee++
           else counts.range++
+
+          const wName = formatWeaponName(p.weapon || 'Desconhecida')
+          wCount[wName] = (wCount[wName] || 0) + 1
         })
+        
         setRoles(counts)
         setTotal(pData.length)
+
+        const sortedWeapons = Object.entries(wCount)
+          .sort((a,b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([name, count]) => ({ name, p: Math.round((count / pData.length) * 100) }))
+        
+        setTopWeapons(sortedWeapons)
       }
       setLoading(false)
     }
     loadComp()
-  }, [])
+  }, [days])
 
   if (loading) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--cyan)' }}>Analisando arquétipos da Zerg...</div>
@@ -106,11 +153,17 @@ export default function ZergHQPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }} className="anim-up">
-        <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--cyan)' }}>biotech</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap' }} className="anim-up">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--cyan)' }}>biotech</span>
+          <div>
+            <h1 className="section-hd" style={{ fontSize: 24 }}>Zerg HQ (Composição)</h1>
+            <div className="label">Laboratório de Análise Tática e Policiamento de Gear.</div>
+          </div>
+        </div>
+
         <div>
-          <h1 className="section-hd" style={{ fontSize: 24 }}>Zerg HQ (Composição)</h1>
-          <div className="label">Laboratório de Análise Tática e Policiamento de Gear.</div>
+          <DateFilter />
         </div>
       </div>
 
@@ -120,38 +173,53 @@ export default function ZergHQPage() {
         <div className="glass panel anim-up">
           <div className="panel-header">
             <span className="section-hd">Composição Média da Zerg</span>
-            <div className="label">Baseado nas últimas 5 batalhas catalogadas.</div>
+            <div className="label">Baseado em {totalBattles} batalhas analisadas no filtro selecionado.</div>
           </div>
-          <div className="panel-body" style={{ display: 'flex', alignItems: 'center', gap: 32, padding: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 32 }}>
             
-            {/* O Gráfico */}
-            <div style={{
-              width: 180, height: 180, borderRadius: '50%',
-              background: `conic-gradient(${conicString || '#1e293b 0% 100%'})`,
-              boxShadow: '0 0 40px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.5)',
-              border: '4px solid #0f172a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <div style={{ 
-                width: 110, height: 110, borderRadius: '50%', background: '#0f172a',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column'
+            <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {/* O Gráfico */}
+              <div style={{
+                width: 180, height: 180, borderRadius: '50%',
+                background: `conic-gradient(${conicString || '#1e293b 0% 100%'})`,
+                boxShadow: '0 0 40px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.5)',
+                border: '4px solid #0f172a',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}>
-                <span style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 24 }}>{total}</span>
-                <span className="label-sm">Jogadores</span>
+                <div style={{ 
+                  width: 110, height: 110, borderRadius: '50%', background: '#0f172a',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column'
+                }}>
+                  <span style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 24 }}>{total}</span>
+                  <span className="label-sm">Jogadores</span>
+                </div>
+              </div>
+
+              {/* Legenda Classes */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {slices.map((s, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 3, background: s.color }} />
+                    <span style={{ width: 60, fontWeight: 700, color: 'var(--text-900)' }}>{s.label}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-400)', width: 40, textAlign: 'right' }}>
+                      {s.percent.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Legenda */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {slices.map((s, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 3, background: s.color }} />
-                  <span style={{ width: 60, fontWeight: 700, color: 'var(--text-900)' }}>{s.label}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-400)', width: 40, textAlign: 'right' }}>
-                    {s.percent.toFixed(1)}%
+            {/* Armas Top Picked */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-600)', marginBottom: 12 }}>Armas Mais Escolhidas:</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {topWeapons.map(tw => (
+                  <span key={tw.name} className="badge badge-dps" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-card)' }}>
+                    <span>{tw.name}</span>
+                    <span style={{ opacity: 0.5 }}>({tw.p}%)</span>
                   </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
           </div>
@@ -188,11 +256,11 @@ export default function ZergHQPage() {
               <span className="material-symbols-outlined" style={{ color: '#f59e0b', fontSize: 20 }}>policy</span>
               <span className="section-hd" style={{ color: '#f59e0b' }}>Zerg Police (Inspetor de Arsenal)</span>
             </div>
-            <div className="label">Armas identificadas nas últimas lutas (Necessita da coluna 'weapon' no DB)</div>
+            <div className="label">Armas identificadas nas lutas recentes do filtro atual.</div>
           </div>
-          <div className="panel-body scroll" style={{ maxHeight: 300, padding: 0 }}>
+          <div className="panel-body scroll" style={{ maxHeight: 600, padding: 0 }}>
             {/* Tabela do Policiamento */}
-            <SupabaseWeaponTable />
+            <SupabaseWeaponTable days={days} />
           </div>
         </div>
 
@@ -201,18 +269,26 @@ export default function ZergHQPage() {
   )
 }
 
-function SupabaseWeaponTable() {
+function SupabaseWeaponTable({ days }: { days: number }) {
   const [weapons, setWeapons] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     async function loadWeapons() {
-      // Puxa lutas mais recentes com a coluna 'weapon'
-      const { data, error } = await sb.from('player_stats')
+      setLoading(true)
+      let query = sb.from('player_stats')
         .select(`player_name, role, weapon, battles!inner(start_time)`)
         .order('battles(start_time)', { ascending: false })
-        .limit(30)
+      
+      if (days > 0) {
+        const pastDate = new Date()
+        pastDate.setDate(pastDate.getDate() - days)
+        query = query.gte('battles.start_time', pastDate.toISOString())
+      }
+      query = query.limit(100)
+
+      const { data, error } = await query
       
       if (error) {
         setError(true)
@@ -222,13 +298,12 @@ function SupabaseWeaponTable() {
       setLoading(false)
     }
     loadWeapons()
-  }, [])
+  }, [days])
 
   if (loading) return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-500)' }}>Pescando armamentos...</div>
   if (error) return (
     <div style={{ padding: 24, color: '#ef4444', fontSize: 12 }}>
-      A coluna <strong>weapon</strong> ainda não foi criada na tabela <em>player_stats</em> do Supabase. <br/><br/>
-      Por favor, vá no painel do seu Supabase, adicione a coluna 'weapon' do tipo texto (text), e rode o script novamente.
+      Erro ao consultar Zerg Police (verifique o Inspector de Log de Batalhas).
     </div>
   )
 
@@ -251,7 +326,7 @@ function SupabaseWeaponTable() {
               </span>
             </td>
             <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--amber)', fontWeight: 600 }}>
-              {w.weapon || 'NÃO ENCONTRADA'}
+              {formatWeaponName(w.weapon)}
             </td>
           </tr>
         ))}

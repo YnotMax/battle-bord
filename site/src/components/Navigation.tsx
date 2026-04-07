@@ -7,6 +7,7 @@ const NAV = [
   { icon: 'analytics',   label: 'Dashboard', href: '/' },
   { icon: 'shield',      label: 'Presença',  href: '/presence' },
   { icon: 'biotech',     label: 'Zerg HQ',   href: '/zerg' },
+  { icon: 'military_tech',label: 'Mentoria', href: '/guild' },
   { icon: 'monitoring',  label: 'Stats',     href: '/stats' },
 ]
 
