@@ -115,7 +115,10 @@ export default async function PresencePage() {
                     <tr key={p.name} style={{ animationDelay: `${(i % 10) * 20}ms` }}>
                       <td style={{ color: 'var(--text-500)', fontSize: 12 }}>{i + 1}</td>
                       <td>
-                        <div style={{ fontWeight: 700, color: 'var(--text-900)' }}>{p.name}</div>
+                        <a href={`/player/${p.name}`} style={{ fontWeight: 700, color: 'var(--text-900)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }} className="hover:text-cyan">
+                          {p.name}
+                          <span className="material-symbols-outlined" style={{ fontSize: 13, opacity: 0.5 }}>open_in_new</span>
+                        </a>
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

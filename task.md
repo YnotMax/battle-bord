@@ -12,16 +12,16 @@ Acompanhe por aqui nosso progresso técnico na construção de cada fase.
   - `[x]` Criar a Página `/presence` (Painel de Atividade / Attendance Diário e Semanal).
   - `[x]` Criar a Página `/stats` (Tabelas e Rankings Filtrados).
 
-- `[/]` **Fase 3: O Zerg Police & Obras de Arte Virtuais**
+- `[x]` **Fase 3: O Zerg Police & Obras de Arte Virtuais**
   - `[x]` Gráfico de Composição (Pizza Média da Zerg).
-  - `[ ]` Verificador Automático e Alerta Webhook do Discord.
+  - `[-]` Verificador Automático e Alerta Webhook do Discord (Adiado).
   - `[x]` O Inspetor Parcial de Builds (Weapon Checker) implementado no banco.
 
-- `[ ]` **Fase 4: Elite Polishing e Escalabilidade In-House**
-  - `[ ]` Filtros Globais de Data no Dashboard Inicial (`/`).
-  - `[ ]` Histórico Visual de Atividade ("Sparklines" Github-style) na tabela de Presença (`/presence`).
-  - `[ ]` IA de Conselho Tático: Cruzar Win Rate x Composição no Zerg HQ.
-  - `[ ]` Migração do Script Crawler para Automação na Nuvem (Vercel Cron / Automático 24/7).
+- `[x]` **Fase 4: Elite Polishing e Escalabilidade In-House**
+  - `[x]` Filtros Globais de Data no Dashboard Inicial (`/`).
+  - `[x]` Histórico Visual de Atividade ("Sparklines" Github-style) na tabela de Presença (`/presence`).
+  - `[x]` IA de Conselho Tático: Cruzar Win Rate x Composição no Zerg HQ.
+  - `[x]` Migração do Script Crawler para Automação na Nuvem (Vercel Cron / Automático 24/7).
 
 - `[ ]` **Fase 5: Módulo de Mentoria Individual (Player Coaching AI)**
   - `[ ]` Criação de URL de Perfil Individual (`/player/[name]`).
