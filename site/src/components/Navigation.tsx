@@ -68,6 +68,7 @@ export function SearchInput({ style }: { style?: any }) {
     if (target) {
       router.push(`/player/${encodeURIComponent(target)}`)
       setQuery('')
+      setSuggestions([])
       setShowDropdown(false)
     }
   }
@@ -76,12 +77,16 @@ export function SearchInput({ style }: { style?: any }) {
     <div style={{ position: 'relative', width: '100%', ...style }} ref={dropdownRef}>
       <form onSubmit={handleSearch} style={{ width: '100%' }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 12px',
-          background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(15,23,42,0.1)',
-          borderRadius: 100, width: '100%'
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--text-400)' }}>search</span>
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 16px',
+          background: 'rgba(255,255,255,0.7)', border: '1px solid var(--border-lo)',
+          borderRadius: 12, width: '100%',
+          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.03)',
+          transition: 'all 0.2s'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--cyan-30)'}
+        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-lo)'}>
+          <span className="material-symbols-outlined" style={{ fontSize: 18, color: 'var(--cyan)' }}>search</span>
           <input
             placeholder="BUSCAR OPERADOR..."
             value={query}
@@ -89,34 +94,36 @@ export function SearchInput({ style }: { style?: any }) {
             onFocus={() => setShowDropdown(suggestions.length > 0)}
             style={{
               background: 'none', border: 'none', outline: 'none',
-              fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.14em',
-              color: 'var(--text-700)', width: '100%',
+              fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600,
+              letterSpacing: '0.05em', color: 'var(--text-900)', width: '100%',
             }}
           />
         </div>
       </form>
 
       {showDropdown && suggestions.length > 0 && (
-        <div className="glass" style={{
-          position: 'absolute', top: '120%', left: 0, right: 0,
-          zIndex: 1000, padding: '4px 0', borderRadius: 12,
-          maxHeight: 240, overflowY: 'auto', border: '1px solid var(--border)',
-          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
-          background: 'var(--bg-popover, rgba(2, 6, 23, 0.95))',
-          backdropFilter: 'blur(10px)'
-        }}>
-          {suggestions.map(s => (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
+          zIndex: 1000, padding: '6px', borderRadius: 14,
+          maxHeight: 280, overflowY: 'auto', border: '1px solid var(--border)',
+          boxShadow: '0 12px 30px -5px rgba(0,0,0,0.15)',
+          background: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(16px)',
+          animation: 'fadeUp 0.2s ease-out'
+        }} className="scroll">
+          {suggestions.map((s, idx) => (
             <div 
               key={s} 
               onClick={() => handleSearch(undefined, s)}
               style={{
-                padding: '10px 16px', cursor: 'pointer',
-                fontSize: 11, fontWeight: 600, color: 'var(--text-700)',
-                fontFamily: 'var(--font-mono)', borderBottom: '1px solid rgba(255,255,255,0.03)',
-                transition: 'all 0.2s'
+                padding: '12px 14px', borderRadius: 8, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: '12px', fontWeight: 700, color: 'var(--text-700)',
+                fontFamily: 'var(--font-mono)', transition: 'all 0.15s',
+                marginBottom: idx === suggestions.length - 1 ? 0 : 2
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(0,255,157,0.05)'
+                e.currentTarget.style.background = 'var(--cyan-10)'
                 e.currentTarget.style.color = 'var(--cyan)'
               }}
               onMouseLeave={(e) => {
@@ -124,6 +131,7 @@ export function SearchInput({ style }: { style?: any }) {
                 e.currentTarget.style.color = 'var(--text-700)'
               }}
             >
+              <span className="material-symbols-outlined" style={{ fontSize: 14, opacity: 0.5 }}>person</span>
               {s.toUpperCase()}
             </div>
           ))}
