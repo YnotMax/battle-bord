@@ -3,10 +3,14 @@ import { PlayerRadar } from '../../../components/PlayerRadar'
 
 export const revalidate = 0 
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase credentials missing. Page data collection might fail during build if not provided in environment.');
+}
+
+const sb = createClient(supabaseUrl, supabaseAnonKey)
 
 type PlayerMatch = {
   battle_id: string

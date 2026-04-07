@@ -2,10 +2,14 @@ import { createClient } from '@supabase/supabase-js'
 
 export const revalidate = 0 // Disable cache for accurate realtime presence
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase credentials missing.');
+}
+
+const sb = createClient(supabaseUrl, supabaseAnonKey)
 
 async function getAttendanceData() {
   // get recent battles for sparkline

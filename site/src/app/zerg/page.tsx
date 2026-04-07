@@ -5,10 +5,14 @@ import { createClient } from '@supabase/supabase-js'
 import { DateFilter } from '../../components/DateFilter'
 import { useSearchParams } from 'next/navigation'
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase credentials missing.');
+}
+
+const sb = createClient(supabaseUrl, supabaseAnonKey)
 
 // Re-using the same function as Mentoria Global
 function formatWeaponName(rawName: string) {

@@ -3,10 +3,14 @@ import { DateFilter } from '../../components/DateFilter'
 
 export const revalidate = 0
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase credentials missing. Page data collection might fail during build if not provided in environment.');
+}
+
+const sb = createClient(supabaseUrl, supabaseAnonKey)
 
 type BattleRecord = {
   id: string
@@ -160,7 +164,7 @@ async function getMentorshipData(days: number) {
 }
 
 export default async function MentorshipGlobalPage(props: { searchParams: Promise<{ days?: string }> }) {
-  const searchParams = await props.searchParams
+  const searchParams = props.searchParams ? await props.searchParams : {}
   const days = parseInt(searchParams.days || '0')
   const data = await getMentorshipData(days)
 
