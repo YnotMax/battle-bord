@@ -1,13 +1,18 @@
+import { Suspense } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { Battle, PlayerStat } from '@/lib/types'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 // ── Supabase (server) ─────────────────────────────────────────────────────────
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('Supabase credentials missing. Page data collection might fail during build if not provided in environment.');
+}
+
+const sb = createClient(supabaseUrl, supabaseAnonKey)
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 async function getBattles(start?: string, end?: string): Promise<Battle[]> {
@@ -96,9 +101,17 @@ const roleCss = (r: string) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE
 // ─────────────────────────────────────────────────────────────────────────────
-export default async function DashboardPage(props: { searchParams?: { start?: string, end?: string } }) {
+export default async function DashboardPage(props: { searchParams?: Promise<{ start?: string, end?: string }> }) {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--cyan)' }}>Iniciando Protocolos do Dashboard...</div>}>
+      <DashboardContent {...props} />
+    </Suspense>
+  )
+}
+
+async function DashboardContent(props: { searchParams?: Promise<{ start?: string, end?: string }> }) {
   // Safe resolution for Next 14/15 
-  const searchParams = props.searchParams ? await Promise.resolve(props.searchParams) : {}
+  const searchParams = props.searchParams ? await props.searchParams : {}
   const start = searchParams.start || ''
   const end = searchParams.end || ''
 
