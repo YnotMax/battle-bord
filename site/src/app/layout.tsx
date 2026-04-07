@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { SidebarNav, BottomNav } from '@/components/Navigation'
+import { SidebarNav, BottomNav, SearchInput } from '@/components/Navigation'
 
 export const metadata: Metadata = {
   title: 'I M O R T A I S | Guild Admin Hub',
@@ -88,21 +88,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </span>
               </div>
 
-              <div className="hide-mobile" style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '6px 12px',
-                background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(15,23,42,0.08)',
-                borderRadius: 100,
-              }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--text-400)' }}>search</span>
-                <input
-                  placeholder="PESQUISAR..."
-                  style={{
-                    background: 'none', border: 'none', outline: 'none',
-                    fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.14em',
-                    color: 'var(--text-700)', width: 120,
-                  }}
-                />
+              <div className="hide-mobile">
+                <SearchInput style={{ width: 180 }} />
               </div>
             </div>
           </header>
