@@ -1,0 +1,12 @@
+# Credenciais - nunca subir pro git!
+.env
+scripts/.env
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Node / Next.js
+node_modules/
+.next/
+site/.env*

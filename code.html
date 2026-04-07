@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>IMORTAIS | Guild Administrative Hub</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@300;400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "tech-cyan": "#00f2ff",
+                "tech-emerald": "#00ff9d",
+                "tech-crimson": "#ff4d4d",
+                "tech-amber": "#ffcc00",
+                "surface-glass": "rgba(255, 255, 255, 0.5)",
+              },
+              fontFamily: {
+                "headline": ["Space Grotesk", "sans-serif"],
+                "mono": ["JetBrains Mono", "monospace"],
+              },
+              boxShadow: {
+                "cyber-glow": "0 0 20px rgba(0, 242, 255, 0.1)",
+                "glass": "0 8px 32px 0 rgba(15, 23, 42, 0.04)",
+              }
+            },
+          },
+        }
+    </script>
+<style type="text/tailwindcss">
+        @layer base {
+            body {
+                @apply bg-[#f4f7f9] text-slate-800 font-headline antialiased overflow-hidden;
+                background-image: 
+                    radial-gradient(circle at 0% 0%, rgba(0, 242, 255, 0.05) 0%, transparent 50%),
+                    radial-gradient(circle at 100% 100%, rgba(0, 255, 157, 0.05) 0%, transparent 50%),
+                    linear-gradient(rgba(203, 213, 225, 0.2) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(203, 213, 225, 0.2) 1px, transparent 1px);
+                background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+            }
+        }
+        .cyber-glass {
+            @apply backdrop-blur-xl bg-white/60 border border-white/80 shadow-glass rounded-sm;
+            position: relative;
+        }
+        .cyber-glass::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(0, 242, 255, 0.3), transparent);
+        }
+        .tech-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .tech-scroll::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.02);
+        }
+        .tech-scroll::-webkit-scrollbar-thumb {
+            @apply bg-slate-200 rounded-full hover:bg-tech-cyan/50 transition-colors;
+        }
+        .glow-line {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 242, 255, 0.4), transparent);
+        }
+        .slot-box {
+            @apply w-10 h-10 border border-slate-200/60 bg-white/40 flex items-center justify-center rounded-sm text-[10px] font-mono text-slate-400;
+        }
+        .slot-box.fail {
+            @apply border-tech-crimson/30 bg-tech-crimson/5 text-tech-crimson;
+        }
+        .slot-box.pass {
+            @apply border-tech-emerald/30 bg-tech-emerald/5 text-tech-emerald;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+<header class="h-16 border-b border-white/60 bg-white/40 backdrop-blur-md flex items-center justify-between px-6 z-50 shrink-0">
+<div class="flex items-center gap-10">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-slate-900 flex items-center justify-center rotate-45">
+<span class="material-symbols-outlined text-white text-lg -rotate-45">admin_panel_settings</span>
+</div>
+<div>
+<h1 class="text-lg font-bold tracking-[0.25em] text-slate-900 leading-none">IMORTAIS</h1>
+<span class="text-[9px] font-mono tracking-widest text-tech-cyan">GUILD ADMIN HUB</span>
+</div>
+</div>
+<div class="h-8 w-[1px] bg-slate-200"></div>
+<nav class="flex gap-8 text-[10px] font-mono uppercase tracking-widest">
+<div class="flex flex-col">
+<span class="text-slate-400">Battle Stats</span>
+<span class="text-slate-900 font-bold">2.4 K/D AVG</span>
+</div>
+<div class="flex flex-col">
+<span class="text-slate-400">Compliance</span>
+<span class="text-tech-emerald font-bold">92.4% ACTIVE</span>
+</div>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4 px-4 py-2 bg-slate-900/5 rounded-full border border-slate-900/10">
+<span class="material-symbols-outlined text-sm text-slate-500">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-[10px] font-mono w-40 uppercase tracking-widest" placeholder="QUERY OPERATOR..." type="text"/>
+</div>
+<div class="flex gap-2">
+<button class="w-9 h-9 flex items-center justify-center border border-slate-200 rounded-sm text-slate-500 hover:text-tech-cyan transition-colors">
+<span class="material-symbols-outlined text-lg">settings</span>
+</button>
+<div class="w-9 h-9 bg-slate-900 rounded-sm flex items-center justify-center">
+<img alt="Admin" class="w-full h-full object-cover rounded-sm opacity-80" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrXG8A5-cZy5KaiK0znOv00EO6cyp6sCTBnfoGnZpvUfH0_qIFogz6Z2TDStJTB-iYoYuh8wGGJg8o9vIxSEwKfMdp7MZkGhlruFMBzbEOv6hz6_NclTFEcEZIVjtlq6mXflVkWlUiZC10Gnh-vmbPQ08KKTDCrMXNDI49Xajk1cNbG88yjVJG9YzonIz-qF06HRBktB2C7CGEFEmnweeWXsF34Cn-58WS_h7jtOc3pieD1S5F0BUelHtaMw0AwYhGf2frPsayaiSP"/>
+</div>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<aside class="w-20 border-r border-white/60 bg-white/20 backdrop-blur-sm flex flex-col items-center py-6 gap-8 shrink-0">
+<button class="w-12 h-12 bg-white border border-slate-200 text-tech-cyan shadow-sm flex items-center justify-center rounded-sm">
+<span class="material-symbols-outlined">analytics</span>
+</button>
+<button class="w-12 h-12 text-slate-400 hover:text-slate-600 flex items-center justify-center">
+<span class="material-symbols-outlined">shield</span>
+</button>
+<button class="w-12 h-12 text-slate-400 hover:text-slate-600 flex items-center justify-center">
+<span class="material-symbols-outlined">biotech</span>
+</button>
+<button class="w-12 h-12 text-slate-400 hover:text-slate-600 flex items-center justify-center">
+<span class="material-symbols-outlined">monitoring</span>
+</button>
+<div class="mt-auto flex flex-col gap-6 items-center">
+<div class="w-1 h-12 bg-gradient-to-b from-transparent via-tech-cyan/30 to-transparent"></div>
+<button class="w-12 h-12 text-slate-400 hover:text-tech-crimson flex items-center justify-center">
+<span class="material-symbols-outlined">logout</span>
+</button>
+</div>
+</aside>
+<main class="flex-1 flex overflow-hidden p-6 gap-6">
+<section class="w-1/3 flex flex-col gap-4">
+<div class="flex justify-between items-end mb-2">
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-slate-400 tracking-[0.2em] uppercase">Operator Registry</span>
+</div>
+<span class="text-[10px] font-mono text-tech-cyan">84 ONLINE</span>
+</div>
+<div class="cyber-glass flex-1 overflow-hidden flex flex-col">
+<div class="p-4 border-b border-slate-100 flex justify-between items-center bg-white/40">
+<span class="text-[11px] font-bold tracking-widest uppercase">Member Roster</span>
+<span class="material-symbols-outlined text-slate-400 text-sm">filter_list</span>
+</div>
+<div class="flex-1 overflow-y-auto tech-scroll">
+<table class="w-full text-left">
+<thead class="sticky top-0 bg-white/90 backdrop-blur-md z-10">
+<tr class="text-[9px] font-mono text-slate-400 uppercase tracking-widest border-b border-slate-100">
+<th class="px-5 py-3 font-normal">Operator</th>
+<th class="px-5 py-3 font-normal">Role</th>
+<th class="px-5 py-3 font-normal text-right">Compliance</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-50">
+<tr class="hover:bg-tech-cyan/5 transition-colors cursor-pointer group bg-white/30">
+<td class="px-5 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-slate-100 overflow-hidden">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnDxJx7rbPEPflbKM8jK7Xpa-osXi-RgMWfBdbUgF0rouNHSgWp6stwNUN3rTOo-lANp5KozT1y_kMPVy8NXttRUAm0FtyPmI4rtV0uO-W-UQLSTOz8BjdYRuDXIIqKU510de-UH9AJ_88IVlK6JMTUl2jYBm785B6inXAomeVLsabWGeqZ2sp9QdqCPqsf5nOlqHW_2KTgjTYQUfSylLHobxyRfKJtvlcSkdkP8IAHsrbuGM4GhiBufFCft8yNogphuRQDYqLUlBe"/>
+</div>
+<div>
+<div class="text-xs font-bold text-slate-900">KRONOS_X</div>
+<div class="text-[9px] font-mono text-slate-400">ID: 0291022</div>
+</div>
+</div>
+</td>
+<td class="px-5 py-4">
+<span class="text-[10px] font-mono px-2 py-0.5 bg-slate-900 text-white rounded-sm">DPS</span>
+</td>
+<td class="px-5 py-4 text-right">
+<span class="text-[10px] font-mono text-tech-emerald font-bold">100%</span>
+</td>
+</tr>
+<tr class="hover:bg-tech-cyan/5 transition-colors cursor-pointer group border-l-2 border-tech-cyan">
+<td class="px-5 py-4 bg-tech-cyan/[0.03]">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-slate-100 overflow-hidden ring-1 ring-tech-cyan/50">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBA4PofwvWJ6rLfmnE38--yapr6nWXk17ULkaIUUVSkCQpj6afPPm5BI0hQxfIVJ-9Fff5diDD1wI2sPGMx6UKV1LPisTldpYaZae_K8A69yWXpCXqrG69SASgFf1vjsVTMRbDaRW3pGi0zsueZgcKdqbtmVIFibBtUC2UFAsKewCZ_zP4_JCNcvwNe8keib4tv9Gw8eIOjicKxTQCinBaoYe_AwRII5owQVPriSs2lUMPQX6z5gSh79KAyxh_UdNC_s73tfQ1SB-CJ"/>
+</div>
+<div>
+<div class="text-xs font-bold text-slate-900">V0ID_STALKER</div>
+<div class="text-[9px] font-mono text-slate-400">ID: 1128392</div>
+</div>
+</div>
+</td>
+<td class="px-5 py-4 bg-tech-cyan/[0.03]">
+<span class="text-[10px] font-mono px-2 py-0.5 bg-tech-cyan/10 text-tech-cyan rounded-sm border border-tech-cyan/20">SUPPORT</span>
+</td>
+<td class="px-5 py-4 text-right bg-tech-cyan/[0.03]">
+<span class="text-[10px] font-mono text-tech-amber font-bold">85%</span>
+</td>
+</tr>
+<tr class="hover:bg-tech-cyan/5 transition-colors cursor-pointer group">
+<td class="px-5 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-slate-100 overflow-hidden">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCkAZjv7NjaXT6FKJ9t577EYol3Lv87OJgAodeRRyKZWRNqa-uF7IFXGDC4BsDpzpCITzYG4zS41u4J5S-h771OibDpM00d9BWW3cJvt_fAjzMKMBxRgeGDfu8rpzKcDhchDSTtJpL8WuAKsCGunK981LPSTfhIo7P0sqUGXu89yOhyd-vVA5OyGNLfCCqwYrpq6DKSZpBDFeDGyniYKPmF-Zw3Mbz5Zmv8oOkldYklHZ0NsN9jqJtNxjOUmsZaFTwkrp3jH-DFqU2q"/>
+</div>
+<div>
+<div class="text-xs font-bold text-slate-900">BONE_CRUSHER</div>
+<div class="text-[9px] font-mono text-slate-400">ID: 8827102</div>
+</div>
+</div>
+</td>
+<td class="px-5 py-4">
+<span class="text-[10px] font-mono px-2 py-0.5 bg-slate-200 text-slate-600 rounded-sm">TANK</span>
+</td>
+<td class="px-5 py-4 text-right">
+<span class="text-[10px] font-mono text-tech-emerald font-bold">100%</span>
+</td>
+</tr>
+<tr class="hover:bg-tech-cyan/5 transition-colors cursor-pointer group">
+<td class="px-5 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-slate-100 overflow-hidden">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAsAHDhW2a34XzIgphosR2-bwQwcv1xZdiua5CaYn0rRXOXY7A_2dOmZZVZX4126iBaxYBoYe__ytbb63cSgGLdl1oRSvTEqGZbyqOaUrSCB9sXxiEIDH6GQ7zqitJBiTHOF9Ni5q5MlKXPslVfI5vFqfZOmA8Omb4BHoZOtJCuo-PgFbvi2QJgdleGPCfS4zalIYPbaSPZ60oWpmuN6tOhIp5Dv8jRq1UtRGqM1yx1VrELM-Q6qzBnxzc0qindk6H5C0QSVdM7dOI8"/>
+</div>
+<div>
+<div class="text-xs font-bold text-slate-900">SILENT_PATH</div>
+<div class="text-[9px] font-mono text-slate-400">ID: 0092182</div>
+</div>
+</div>
+</td>
+<td class="px-5 py-4">
+<span class="text-[10px] font-mono px-2 py-0.5 bg-slate-900 text-white rounded-sm">SCOUT</span>
+</td>
+<td class="px-5 py-4 text-right">
+<span class="text-[10px] font-mono text-tech-crimson font-bold">42%</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section class="flex-1 flex flex-col gap-6 overflow-hidden">
+<div class="grid grid-cols-3 gap-6 shrink-0">
+<div class="col-span-2 cyber-glass p-6">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h3 class="text-xs font-bold tracking-widest uppercase text-slate-900">Zerg Police Inspector</h3>
+<p class="text-[10px] font-mono text-slate-400">TARGET: V0ID_STALKER • ACTIVE DEPLOYMENT</p>
+</div>
+<div class="bg-tech-amber/10 border border-tech-amber/20 px-3 py-1 rounded-sm">
+<span class="text-[9px] font-mono text-tech-amber font-bold">WARNING: SUB-OPTIMAL GEAR</span>
+</div>
+</div>
+<div class="flex items-center gap-10">
+<div class="grid grid-cols-4 gap-2">
+<div class="slot-box pass">HEAD</div>
+<div class="slot-box pass">BODY</div>
+<div class="slot-box pass">BOOTS</div>
+<div class="slot-box fail">CAPE</div>
+<div class="slot-box pass">MAIN</div>
+<div class="slot-box pass">OFF</div>
+<div class="slot-box fail">FOOD</div>
+<div class="slot-box pass">POT</div>
+</div>
+<div class="h-16 w-[1px] bg-slate-100"></div>
+<div class="flex-1 space-y-3">
+<div class="flex justify-between text-[10px] font-mono">
+<span class="text-slate-400">REPORTED MOUNT:</span>
+<span class="text-tech-crimson font-bold">T3 HORSE (LOW TIER)</span>
+</div>
+<div class="flex justify-between text-[10px] font-mono">
+<span class="text-slate-400">AVERAGE IP:</span>
+<span class="text-slate-900 font-bold">1042 (REQ: 1300)</span>
+</div>
+<div class="flex justify-between text-[10px] font-mono">
+<span class="text-slate-400">FACTION COMPLIANCE:</span>
+<span class="text-tech-emerald font-bold">VALID</span>
+</div>
+</div>
+</div>
+</div>
+<div class="cyber-glass p-6 flex flex-col justify-between">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-tech-cyan text-sm">stars</span>
+<h3 class="text-[10px] font-bold tracking-widest uppercase text-slate-900">PERFORMANCE RATIO</h3>
+</div>
+<div class="text-3xl font-light text-slate-900">4.2 <span class="text-[10px] font-mono text-slate-400">EFF</span></div>
+<div class="mt-4 pt-4 border-t border-slate-100">
+<div class="text-[9px] font-mono text-slate-400 uppercase tracking-widest mb-1">Efficiency Ranking</div>
+<div class="h-1 bg-slate-100 w-full overflow-hidden flex">
+<div class="h-full bg-tech-cyan" style="width: 85%"></div>
+</div>
+<div class="mt-1 text-[9px] font-mono text-tech-cyan">TOP 5% OF GUILD</div>
+</div>
+</div>
+</div>
+<div class="flex-1 grid grid-cols-2 gap-6 overflow-hidden">
+<div class="cyber-glass flex flex-col overflow-hidden">
+<div class="p-4 border-b border-slate-100 flex justify-between items-center bg-white/40">
+<h3 class="text-xs font-bold tracking-widest uppercase">Healer Microscope (HPM)</h3>
+<span class="material-symbols-outlined text-tech-cyan text-sm">biotech</span>
+</div>
+<div class="p-6 flex-1 flex flex-col justify-between">
+<div class="h-32 flex items-end gap-1 px-2">
+<div class="flex-1 bg-tech-cyan/20 h-[30%] hover:bg-tech-cyan/40 transition-colors"></div>
+<div class="flex-1 bg-tech-cyan/20 h-[45%] hover:bg-tech-cyan/40 transition-colors"></div>
+<div class="flex-1 bg-tech-cyan/20 h-[85%] hover:bg-tech-cyan/40 transition-colors"></div>
+<div class="flex-1 bg-tech-cyan/20 h-[60%] hover:bg-tech-cyan/40 transition-colors"></div>
+<div class="flex-1 bg-tech-cyan/20 h-[95%] hover:bg-tech-cyan/40 transition-colors"></div>
+<div class="flex-1 bg-tech-cyan/30 h-[70%] hover:bg-tech-cyan/40 transition-colors border-t-2 border-tech-cyan"></div>
+</div>
+<div class="flex justify-between mt-4 text-[9px] font-mono text-slate-400 tracking-widest">
+<span>-10 MIN</span>
+<span>-5 MIN</span>
+<span class="text-tech-cyan">LIVE ENGAGEMENT</span>
+</div>
+<div class="mt-6 space-y-2">
+<div class="flex justify-between text-[10px] font-mono border-b border-slate-50 pb-2">
+<span class="text-slate-400">PEAK HEALS/MIN:</span>
+<span class="text-slate-900 font-bold">14,200 HPM</span>
+</div>
+<div class="flex justify-between text-[10px] font-mono border-b border-slate-50 pb-2">
+<span class="text-slate-400">ENGAGEMENT CLASS:</span>
+<span class="text-tech-emerald font-bold">HERO</span>
+</div>
+</div>
+</div>
+</div>
+<div class="cyber-glass flex flex-col overflow-hidden">
+<div class="p-4 border-b border-slate-100 flex justify-between items-center bg-white/40">
+<h3 class="text-xs font-bold tracking-widest uppercase">Combat Metrics</h3>
+<span class="material-symbols-outlined text-slate-400 text-sm">query_stats</span>
+</div>
+<div class="p-6 space-y-6">
+<div class="grid grid-cols-2 gap-4">
+<div class="p-3 bg-slate-50 border border-slate-100">
+<div class="text-[9px] font-mono text-slate-400 uppercase tracking-widest">Damage Done</div>
+<div class="text-lg font-bold text-slate-900">421K</div>
+</div>
+<div class="p-3 bg-slate-50 border border-slate-100">
+<div class="text-[9px] font-mono text-slate-400 uppercase tracking-widest">Kills</div>
+<div class="text-lg font-bold text-slate-900">14</div>
+</div>
+<div class="p-3 bg-slate-50 border border-slate-100">
+<div class="text-[9px] font-mono text-slate-400 uppercase tracking-widest">Deaths</div>
+<div class="text-lg font-bold text-slate-900">02</div>
+</div>
+<div class="p-3 bg-slate-50 border border-slate-100">
+<div class="text-[9px] font-mono text-slate-400 uppercase tracking-widest">Support Done</div>
+<div class="text-lg font-bold text-slate-900">892K</div>
+</div>
+</div>
+<div class="bg-tech-cyan/5 p-4 border border-tech-cyan/10 rounded-sm">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-tech-cyan text-[14px]">history</span>
+<span class="text-[10px] font-mono font-bold text-slate-900">HISTORICAL TREND</span>
+</div>
+<p class="text-[10px] text-slate-500 leading-relaxed italic">
+                                    "Consistently high performance in support roles during Black Zone operations. Maintaining 2.0+ K/D over last 48 hours."
+                                </p>
+</div>
+</div>
+</div>
+</div>
+<div class="cyber-glass shrink-0">
+<div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white/40">
+<span class="text-[11px] font-bold tracking-widest uppercase">Operational Battle Log</span>
+<div class="flex gap-4">
+<span class="text-[9px] font-mono text-slate-400">LAST BATTLE: 4M AGO</span>
+</div>
+</div>
+<div class="p-6">
+<div class="flex gap-8 overflow-x-auto tech-scroll pb-2">
+<div class="min-w-[200px] p-3 border-l-2 border-tech-emerald bg-white/40">
+<div class="text-[9px] font-mono text-slate-400">SUNSTRAND SHOALS</div>
+<div class="text-xs font-bold text-slate-900">WIN • 2.1 K/D</div>
+</div>
+<div class="min-w-[200px] p-3 border-l-2 border-tech-crimson bg-white/40">
+<div class="text-[9px] font-mono text-slate-400">REDTREE ENCLAVE</div>
+<div class="text-xs font-bold text-slate-900">LOSS • 0.8 K/D</div>
+</div>
+<div class="min-w-[200px] p-3 border-l-2 border-tech-emerald bg-white/40 opacity-50">
+<div class="text-[9px] font-mono text-slate-400">GRAVE ANCIENTS</div>
+<div class="text-xs font-bold text-slate-900">WIN • 3.4 K/D</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<div class="fixed bottom-6 right-6 w-80 cyber-glass overflow-hidden z-50">
+<div class="p-3 bg-[#5865F2] flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-white text-sm">hub</span>
+<span class="text-[10px] font-mono text-white font-bold tracking-widest">DISCORD STREAM</span>
+</div>
+<span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+</div>
+<div class="p-4 space-y-3">
+<div class="flex gap-3">
+<div class="w-1 bg-tech-cyan"></div>
+<div>
+<div class="text-[10px] font-bold text-slate-900">BATTLE_ALERT: BLACK ZONE</div>
+<div class="text-[9px] font-mono text-slate-400 mt-0.5">Deployment confirmed in Deepwood Gorge. 14 members active.</div>
+</div>
+</div>
+<button class="w-full py-2 bg-slate-900 text-white text-[9px] font-bold tracking-widest uppercase hover:bg-tech-cyan transition-colors">
+                JOIN VOICE COMMS
+            </button>
+</div>
+</div>
+
+</body></html>
