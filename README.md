@@ -5,7 +5,7 @@
 ![Supabase](https://img.shields.io/badge/Supabase-Database-green?style=for-the-badge&logo=supabase)
 ![Python](https://img.shields.io/badge/Python-Crawler-yellow?style=for-the-badge&logo=python)
 
-O **I M O R T A I S Battle Board** é uma plataforma de elite para gestão tática e análise de performance ZvZ (Zerg vs Zerg) no Albion Online. Desenvolvido para a guilda **I M O R T A I S**, o sistema automatiza a coleta de dados de batalhas, gera KPIs de performance e oferece um sistema de mentoria individual baseado em dados reais de combate.
+O **Battle Board** é uma plataforma de elite para gestão tática e análise de performance ZvZ (Zerg vs Zerg) no Albion Online. Desenvolvido para a guilda **I M O R T A I S**, o sistema automatiza a coleta de dados de batalhas, gera KPIs de performance e oferece um sistema de mentoria individual baseado em dados reais de combate.
 
 ---
 
@@ -103,4 +103,11 @@ python crawler.py
 A **I M O R T A I S** é uma organização focada em conteúdo de larga escala (ZvZ) no servidor Americas do Albion Online. Este projeto nasceu da necessidade de profissionalizar a análise de dados para manter a guilda no topo do ranking competitivo.
 
 ---
-*Desenvolvido com ⚡ por Antigravity para a comunidade Albion.*
+
+## 👨‍💻 Desenvolvedor
+Este projeto foi idealizado e desenvolvido por **Tony Max**.
+- **LinkedIn**: [Tony Max da Silva Costa](https://www.linkedin.com/in/tony-max-da-silva-costa)
+- **Instagram**: [@tony_max_silva](https://www.instagram.com/tony_max_silva/)
+
+---
+*Powered by Data and Passion for Albion Online.*
