@@ -1,4 +1,4 @@
-# 🛡️ I M O R T A I S — Battle Board & Admin Hub
+# 🛡️ Battle Board & Admin Hub
 
 ![Albion Online](https://img.shields.io/badge/Albion%20Online-ZvZ%20Analytics-blue?style=for-the-badge)
 ![Next.js](https://img.shields.io/badge/Next.js%2015-black?style=for-the-badge&logo=next.js)
