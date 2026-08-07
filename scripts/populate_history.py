@@ -1,4 +1,11 @@
-from crawler import process_battle_details, supabase, GUILD_NAME
+"""
+SCRIPT: populate_history.py
+OBJETIVO: Varrer múltiplas páginas da API do AlbionBB de uma só vez.
+USO: Executado pelo 'Encher_Banco_Com_Historico.bat'. Usado apenas para
+     popular o banco de dados incialmente com dados antigos.
+"""
+
+from crawler import process_battle_details, supabase, GUILD_NAME, GUILD_ID
 import requests
 
 import time
@@ -11,7 +18,7 @@ def fetch_deep_history(pages_to_scan=15):
     
     for page in range(1, pages_to_scan + 1):
         print(f"\n>>>> ESCAVANDO PÁGINA {page} DE {pages_to_scan} <<<<")
-        url = f"https://api.albionbb.com/us/battles?search={GUILD_NAME}&minPlayers=25&page={page}"
+        url = f"https://api.albionbb.com/us/battles?guildId={GUILD_ID}&minPlayers=21&page={page}"  # Mínimo de 21 jogadores
         response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         
         if response.status_code != 200:
@@ -49,5 +56,5 @@ def fetch_deep_history(pages_to_scan=15):
     print("\n[+] FINALIZADO! Todos os dados passados foram capturados com sucesso.")
 
 if __name__ == "__main__":
-    # Varrendo até a página 15 da API (mais ou menos 300+ registros investigados de trás pra frente)
-    fetch_deep_history(15)
+    # Varrendo até a página 2 da API para pegar apenas batalhas mais recentes e evitar bloqueios
+    fetch_deep_history(2)

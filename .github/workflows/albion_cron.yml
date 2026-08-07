@@ -25,9 +25,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests supabase python-dotenv
           
+      # Busca usando guildId=YNRMcsuVSRWTBs0y4mZ-SQ (ID exato da I M O R T A I S)
+      # Evita confusão com IMORTAIS ACADEMY ou outras guildas de nome similar
       - name: Executar Crawler (I M O R T A I S)
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python scripts/crawler.py
+

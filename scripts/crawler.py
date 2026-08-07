@@ -1,3 +1,10 @@
+"""
+SCRIPT: crawler.py
+OBJETIVO: Varrer apenas a 1ª página da API do AlbionBB (lutas mais recentes).
+USO: Executado pelo 'Atualizar_Dados_Manualmente.bat'. Usado no dia a dia
+     para puxar apenas lutas novas de forma rápida e segura.
+"""
+
 import os
 import requests
 from supabase import create_client, Client
@@ -16,10 +23,11 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 GUILD_NAME = "I M O R T A I S"
+GUILD_ID = "YNRMcsuVSRWTBs0y4mZ-SQ"
 
 def fetch_recent_battles():
     print(f"Buscando as últimas batalhas da guilda {GUILD_NAME} no AlbionBB...")
-    url = f"https://api.albionbb.com/us/battles?search={GUILD_NAME}&minPlayers=25&page=1"
+    url = f"https://api.albionbb.com/us/battles?guildId={GUILD_ID}&minPlayers=21&page=1"  # Mínimo de 21 jogadores
     response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
     
     if response.status_code != 200:
@@ -54,8 +62,8 @@ def process_battle_details(battle_id):
     guilds = data.get("guilds", [])
     imortais_info = next((g for g in guilds if g.get("name", "").strip().lower() == GUILD_NAME.strip().lower()), None)
     
-    if not imortais_info or imortais_info.get("players", 0) < 15:
-        print(f"Batalha ignorada. Menos de 15 jogadores da guilda ({imortais_info.get('players', 0) if imortais_info else 0} presentes).")
+    if not imortais_info or imortais_info.get("players", 0) < 21:
+        print(f"Batalha ignorada. Menos de 21 jogadores da guilda ({imortais_info.get('players', 0) if imortais_info else 0} presentes).")
         return
         
     inimigos = [g.get("name") for g in guilds if g.get("name") and g.get("name") != imortais_info.get("name")][:3]

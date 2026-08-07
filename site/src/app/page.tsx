@@ -15,8 +15,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const sb = createClient(supabaseUrl, supabaseAnonKey)
 
 // ── Data ──────────────────────────────────────────────────────────────────────
+// Battle log (para exibição): limita a 50 mais recentes
 async function getBattles(start?: string, end?: string): Promise<Battle[]> {
-  let q = sb.from('battles').select('*').order('start_time', { ascending: false }).limit(25)
+  let q = sb.from('battles').select('*').order('start_time', { ascending: false }).limit(50)
+  
+  if (start) q = q.gte('start_time', start)
+  if (end) {
+    const ed = new Date(end)
+    ed.setHours(23, 59, 59, 999)
+    q = q.lte('start_time', ed.toISOString())
+  }
+  
+  const { data } = await q
+  return data ?? []
+}
+
+// KPIs globais (sem limite para Win Rate e leaderboards serem precisos)
+async function getAllBattles(start?: string, end?: string): Promise<Battle[]> {
+  let q = sb.from('battles').select('*').order('start_time', { ascending: false })
   
   if (start) q = q.gte('start_time', start)
   if (end) {
@@ -115,11 +131,13 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
   const start = searchParams.start || ''
   const end = searchParams.end || ''
 
-  const [battles, players] = await Promise.all([getBattles(start, end), getPlayerAgg(start, end)])
+  // battles = log de exibição (50 últimas), allBattles = base completa para KPIs
+  const [battles, allBattles, players] = await Promise.all([getBattles(start, end), getAllBattles(start, end), getPlayerAgg(start, end)])
 
-  const wins      = battles.filter(b => b.result === 'WIN').length
-  const winRate   = battles.length ? Math.round((wins / battles.length) * 100) : 0
-  const totalFame = battles.reduce((s, b) => s + (b.total_fame ?? 0), 0)
+  // Usa allBattles para KPIs precisos (não limitado a 50)
+  const wins      = allBattles.filter(b => b.result === 'WIN').length
+  const winRate   = allBattles.length ? Math.round((wins / allBattles.length) * 100) : 0
+  const totalFame = allBattles.reduce((s, b) => s + (b.total_fame ?? 0), 0)
   const topDPS     = [...players].sort((a, b) => b.damage   - a.damage).slice(0, 25)
   const topHeal    = [...players].sort((a, b) => b.healing  - a.healing).slice(0, 25)
   const topKills   = [...players].sort((a, b) => b.kills    - a.kills).slice(0, 25)
@@ -163,12 +181,12 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
         gap: 10, marginBottom: 16,
       }}>
         {[
-          { val: battles.length, lbl: 'Batalhas',    color: 'var(--cyan)'    },
-          { val: `${winRate}%`,  lbl: 'Win Rate',    color: winRateStroke    },
-          { val: fmt(totalFame), lbl: 'Kill Fame',   color: 'var(--text-900)'},
-          { val: wins,           lbl: 'Vitórias',    color: '#059669'        },
-          { val: battles.length - wins, lbl: 'Derrotas', color: '#dc2626'   },
-          { val: players.length, lbl: 'Operadores',  color: 'var(--text-900)'},
+          { val: allBattles.length, lbl: 'Batalhas',    color: 'var(--cyan)'    },
+          { val: `${winRate}%`,      lbl: 'Win Rate',    color: winRateStroke    },
+          { val: fmt(totalFame),     lbl: 'Kill Fame',   color: 'var(--text-900)'},
+          { val: wins,               lbl: 'Vitórias',    color: '#059669'        },
+          { val: allBattles.length - wins, lbl: 'Derrotas', color: '#dc2626'   },
+          { val: players.length,     lbl: 'Operadores',  color: 'var(--text-900)'},
         ].map((k, i) => (
           <div key={i} className="glass anim-up" style={{ padding: '12px 16px', animationDelay: `${i * 40}ms` }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>
@@ -471,6 +489,67 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
           </div>
         </div>
       </div>
+
+      {/* ── WIN RATE AO LONGO DO TEMPO ─────────────────── */}
+      {allBattles.length >= 3 && (() => {
+        // Agrupa batalhas em grupos de 5 e calcula WR de cada grupo
+        const chunks: { label: string; wr: number; n: number }[] = []
+        const chunkSize = Math.max(1, Math.floor(allBattles.length / 8))
+        // allBattles está ordenado do mais recente → mais antigo, invertemos para o gráfico
+        const ordered = [...allBattles].reverse()
+        for (let i = 0; i < ordered.length; i += chunkSize) {
+          const slice = ordered.slice(i, i + chunkSize)
+          const w = slice.filter(b => b.result === 'WIN').length
+          chunks.push({
+            label: `${i + 1}–${Math.min(i + chunkSize, ordered.length)}`,
+            wr: Math.round((w / slice.length) * 100),
+            n: slice.length
+          })
+        }
+        const maxWR = 100
+        const W = 100, H = 50
+        const pts = chunks.map((c, i) => {
+          const x = chunks.length === 1 ? W / 2 : (i / (chunks.length - 1)) * W
+          const y = H - (c.wr / maxWR) * H
+          return { x, y, ...c }
+        })
+        const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+        const fillD = `M ${pts[0].x} ${H} ${pts.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${pts[pts.length - 1].x} ${H} Z`
+        return (
+          <div className="glass anim-up" style={{ padding: 20, marginTop: 16, animationDelay: '160ms' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--cyan)' }}>trending_up</span>
+                <span className="section-hd">Evolução do Win Rate</span>
+              </div>
+              <span className="label" style={{ fontSize: 10 }}>Agrupado em blocos de {chunkSize} batalha(s)</span>
+            </div>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 70, overflow: 'visible' }}>
+              {/* Linhas de grid */}
+              {[25, 50, 75].map(v => (
+                <line key={v} x1="0" y1={H - (v / 100) * H} x2={W} y2={H - (v / 100) * H}
+                  stroke="rgba(203,213,225,0.1)" strokeWidth="0.5" strokeDasharray="2,2" />
+              ))}
+              {/* Linha de 50% */}
+              <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="rgba(203,213,225,0.2)" strokeWidth="0.8" />
+              {/* Área preenchida */}
+              <path d={fillD} fill="rgba(0,255,157,0.08)" />
+              {/* Linha */}
+              <path d={pathD} fill="none" stroke="var(--cyan)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              {/* Pontos */}
+              {pts.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r="2.5" fill={p.wr >= 50 ? '#00ff9d' : '#ef4444'} stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
+                  <text x={p.x} y={p.y - 5} textAnchor="middle" fontSize="4.5"
+                    fill={p.wr >= 50 ? '#00ff9d' : '#ef4444'} fontWeight="700" fontFamily="monospace">
+                    {p.wr}%
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        )
+      })()}
 
       {/* ── RESPONSIVE GRID OVERRIDE FOR MOBILE ──────────── */}
       <style>{`

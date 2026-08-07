@@ -189,6 +189,12 @@ async function getPlayerProfile(playerName: string) {
     }
   })
 
+  // ============== RECORDS PESSOAIS ==================
+  const recordDamage = matches.reduce((max, m) => m.damage_done > max.val ? { val: m.damage_done, battle: m.battle_id } : max, { val: 0, battle: '' })
+  const recordKills = matches.reduce((max, m) => m.kills > max.val ? { val: m.kills, battle: m.battle_id } : max, { val: 0, battle: '' })
+  const avgIP = matches.length > 0 ? Math.round(matches.reduce((s, m) => s + (m.average_ip || 0), 0) / matches.length) : 0
+  const totalBattlesPlayed = matches.length
+
   return {
     rawMatches: matches,
     globalStats: {
@@ -200,6 +206,13 @@ async function getPlayerProfile(playerName: string) {
     enemies: {
       nemesis: nemesis ? { guild: nemesis[0], deaths: nemesis[1].deathsTo } : null,
       prey: prey ? { guild: prey[0], winRate: Math.round((prey[1].winsAgs/prey[1].encounters)*100) } : null,
+    },
+    records: {
+      damage: recordDamage,
+      kills: recordKills,
+      avgIP,
+      totalWins,
+      totalBattlesPlayed,
     }
   }
 }
@@ -451,6 +464,40 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
         {/* ── RIGHT: Snapshot KPI & Match History ────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           
+          {/* RECORDS PESSOAIS */}
+          <div className="glass anim-up" style={{ padding: '16px 20px', borderTop: '2px solid var(--amber)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--amber)' }}>emoji_events</span>
+              <span className="section-hd" style={{ fontSize: 12 }}>Records Pessoais</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ padding: '10px 12px', background: 'rgba(249,115,22,0.08)', borderRadius: 8, border: '1px solid rgba(249,115,22,0.2)' }}>
+                <div className="label" style={{ fontSize: 9, marginBottom: 4 }}>MAX DANO (1 BATALHA)</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 14, color: '#f97316' }}>
+                  {profile.records.damage.val > 0 ? (profile.records.damage.val >= 1_000_000 ? `${(profile.records.damage.val/1_000_000).toFixed(1)}M` : `${Math.round(profile.records.damage.val/1000)}K`) : '-'}
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(220,38,38,0.08)', borderRadius: 8, border: '1px solid rgba(220,38,38,0.2)' }}>
+                <div className="label" style={{ fontSize: 9, marginBottom: 4 }}>MAX KILLS (1 BATALHA)</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 14, color: '#dc2626' }}>
+                  {profile.records.kills.val > 0 ? profile.records.kills.val : '-'}
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(0,255,157,0.08)', borderRadius: 8, border: '1px solid var(--cyan-20)' }}>
+                <div className="label" style={{ fontSize: 9, marginBottom: 4 }}>IP MÉDIO</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 14, color: 'var(--cyan)' }}>
+                  {profile.records.avgIP > 0 ? profile.records.avgIP : '-'}
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(5,150,105,0.08)', borderRadius: 8, border: '1px solid rgba(5,150,105,0.2)' }}>
+                <div className="label" style={{ fontSize: 9, marginBottom: 4 }}>VITÓRIAS TOTAIS</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 14, color: '#059669' }}>
+                  {profile.records.totalWins}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
             <div className="glass anim-up" style={{ padding: '16px 16px', textAlign: 'center' }}>
               <div className="label" style={{ marginBottom: 4 }}>Presença</div>

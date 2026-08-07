@@ -17,6 +17,7 @@ type BattleRecord = {
   opponents: string
   result: string
   start_time: string
+  total_fame: number
 }
 
 type PlayerStat = {
@@ -43,7 +44,7 @@ function formatWeaponName(rawName: string) {
 }
 
 async function getMentorshipData(days: number) {
-  let qBattles = sb.from('battles').select('id, opponents, result, start_time').order('start_time', { ascending: false })
+  let qBattles = sb.from('battles').select('id, opponents, result, start_time, total_fame').order('start_time', { ascending: false })
   
   if (days > 0) {
     const pastDate = new Date()
@@ -63,7 +64,7 @@ async function getMentorshipData(days: number) {
   // ============================================
   // 1. RIVALIDADES E MATCHUPS (GUILDAS OPOSTAS)
   // ============================================
-  const matchups: Record<string, { guild: string, fights: number, wins: number, losses: number }> = {}
+  const matchups: Record<string, { guild: string, fights: number, wins: number, losses: number, fameStolen: number, streak: string[] }> = {}
 
   const validBattleIds = new Set(battles.map(b => b.id))
 
@@ -73,11 +74,17 @@ async function getMentorshipData(days: number) {
     const oppList = b.opponents.split(',').map(name => name.trim())
     oppList.forEach(opp => {
       if (!opp || opp.length < 2) return;
-      if (!matchups[opp]) matchups[opp] = { guild: opp, fights: 0, wins: 0, losses: 0 }
+      if (!matchups[opp]) matchups[opp] = { guild: opp, fights: 0, wins: 0, losses: 0, fameStolen: 0, streak: [] }
       
       matchups[opp].fights += 1
-      if (b.result === 'WIN') matchups[opp].wins += 1
-      else matchups[opp].losses += 1
+      matchups[opp].streak.push(b.result) // mais recente primeiro (a query vem desc)
+      if (b.result === 'WIN') {
+        matchups[opp].wins += 1
+        // Soma o fame dessa batalha como "fame roubado" dos inimigos
+        matchups[opp].fameStolen += (b.total_fame || 0)
+      } else {
+        matchups[opp].losses += 1
+      }
     })
   })
 
@@ -435,6 +442,14 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                 const wr = Math.round((r.wins / r.fights) * 100)
                 const isNemesis = wr < 45
                 const isPrey = wr >= 60
+                // Streak: últimas 5 batalhas contra essa guilda (streak[0] = mais recente)
+                const last5 = r.streak.slice(0, 5)
+                // Fame roubado formatado
+                const fameStr = r.fameStolen >= 1_000_000
+                  ? `${(r.fameStolen / 1_000_000).toFixed(1)}M` 
+                  : r.fameStolen >= 1_000 
+                  ? `${Math.round(r.fameStolen / 1_000)}K` 
+                  : r.fameStolen > 0 ? String(r.fameStolen) : '—'
 
                 return (
                   <div key={r.guild} style={{
@@ -463,6 +478,31 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                       <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
                         <div style={{ width: `${wr}%`, background: isNemesis ? '#ef4444' : isPrey ? '#10b981' : 'var(--cyan)' }} />
                       </div>
+                    </div>
+
+                    {/* Fame Roubado + Streak */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {r.fameStolen > 0 && (
+                        <div style={{ fontSize: 10, color: 'var(--text-500)' }}>
+                          💀 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#f97316' }}>{fameStr}</span>
+                          <span style={{ color: 'var(--text-400)' }}> fame roubado</span>
+                        </div>
+                      )}
+                      {last5.length > 0 && (
+                        <div style={{ display: 'flex', gap: 3, marginLeft: 'auto' }}>
+                          {last5.map((res, idx) => (
+                            <span key={idx} style={{ 
+                              fontSize: 9, width: 16, height: 16, borderRadius: 3,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: res === 'WIN' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+                              color: res === 'WIN' ? '#10b981' : '#ef4444',
+                              fontWeight: 800
+                            }}>
+                              {res === 'WIN' ? 'V' : 'D'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )

@@ -48,9 +48,8 @@ function ZergHQContent() {
         const pastDate = new Date()
         pastDate.setDate(pastDate.getDate() - days)
         queryBattles = queryBattles.gte('start_time', pastDate.toISOString())
-      } else {
-        queryBattles = queryBattles.limit(10) // default para evitar sobrecarga se all
       }
+      // Sem filtro de dias: usa todas as batalhas (base completa para composição e win rate)
 
       const { data: bData } = await queryBattles
 
