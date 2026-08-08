@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { PlayerRadar } from '../../../components/PlayerRadar'
+import { WeaponIcon } from '@/components/WeaponIcon'
 
 export const revalidate = 0 
 
@@ -55,8 +56,42 @@ async function getPlayerProfile(playerName: string) {
 
   if (!data || data.length === 0) return null
 
-  // Busca Guild global para Relativos
-  const { data: guildData } = await sb.from('player_stats').select('weapon, damage_done, healing_done, kills, deaths')
+  // Busca Guild global para Relativos e Média Real
+  const { data: guildData } = await sb.from('player_stats').select('role, weapon, damage_done, healing_done, kills, deaths, battle_id')
+
+  // Calcula médias globais da guilda
+  let gKills = 0, gDeaths = 0, gBattles = 0
+  let gRoleDmg = 0, gRoleHeal = 0, gRoleBattles = 0
+  
+  const uniqueBattles = new Set<string>()
+  const roleTypeParam = data[0]?.role?.toLowerCase() || ''
+  const roleGroup = roleTypeParam.includes('tank') || roleTypeParam.includes('support') ? 'tank' 
+                  : roleTypeParam.includes('heal') ? 'healer' 
+                  : 'dps'
+
+  if (guildData) {
+    guildData.forEach((g: any) => {
+      uniqueBattles.add(g.battle_id)
+      gKills += g.kills || 0
+      gDeaths += g.deaths || 0
+      
+      const gRole = (g.role || '').toLowerCase()
+      const gGrp = gRole.includes('tank') || gRole.includes('support') ? 'tank'
+                 : gRole.includes('heal') ? 'healer' : 'dps'
+                 
+      if (gGrp === roleGroup) {
+        gRoleDmg += g.damage_done || 0
+        gRoleHeal += g.healing_done || 0
+        gRoleBattles += 1
+      }
+    })
+    gBattles = uniqueBattles.size || 1
+  }
+  // Médias
+  const avgGuildKillsPerPlayer = (gKills / (guildData?.length || 1)) // média de kills por participação
+  const avgGuildDeathsPerPlayer = (gDeaths / (guildData?.length || 1))
+  const avgRoleDmg = (gRoleDmg / (gRoleBattles || 1))
+  const avgRoleHeal = (gRoleHeal / (gRoleBattles || 1))
 
   const matches = data as unknown as PlayerMatch[]
   
@@ -126,23 +161,33 @@ async function getPlayerProfile(playerName: string) {
   // ============== RADAR TÁTICO ==================
   const roleType = weaponsArray[0]?.role?.toLowerCase() || ''
   const isHealer = roleType.includes('heal')
-  const isTank = roleType.includes('tank') || roleType.includes('support')
-  const totalMatches = matches.length
+  const totalMatches = matches.length || 1
 
-  const myP_Kills = Math.min(100, ((totalKills / totalMatches) / (isHealer ? 1 : 5)) * 100)
-  const myP_Surv = Math.min(100, Math.max(0, 100 - (totalDeaths / totalMatches) * (isTank ? 15 : 25)))
-  const myP_Dmg = Math.min(100, ((totalDamage / totalMatches) / (isHealer ? 1000 : 800000)) * 100)
-  const myP_Heal = Math.min(100, ((totalHealing / totalMatches) / (isHealer ? 1500000 : 2000)) * 100)
+  // 1. Agressividade: Média da Guilda = 50. Dobro = 100
+  const myKillsPerMatch = totalKills / totalMatches
+  const scoreKills = avgGuildKillsPerPlayer > 0 ? (myKillsPerMatch / avgGuildKillsPerPlayer) * 50 : 50
+  
+  // 2. Sobrevivência: 0 mortes = 100%, 3+ mortes = 0%
+  const myDeathsPerMatch = totalDeaths / totalMatches
+  const scoreSurv = Math.max(0, 100 - (myDeathsPerMatch / 3) * 100)
+  const gSurv = Math.max(0, 100 - (avgGuildDeathsPerPlayer / 3) * 100)
+
+  // 3. Dano Zerg (DPS): Média do role = 50
+  const myDmgPerMatch = totalDamage / totalMatches
+  const scoreDmg = avgRoleDmg > 0 ? (myDmgPerMatch / avgRoleDmg) * 50 : (isHealer ? 0 : 50)
+  
+  // 4. Sustain (Heal): Média do role = 50
+  const myHealPerMatch = totalHealing / totalMatches
+  const scoreHeal = avgRoleHeal > 0 ? (myHealPerMatch / avgRoleHeal) * 50 : (isHealer ? 50 : 0)
+
   const myP_Win = Math.round((totalWins / totalMatches) * 100)
 
-  // Guild Baseline (A média do top 1 para radar visual)
-  // Fixaremos em um "Ideal da Guilda" de 80% como métrica base de Zerg Oficial
   const radarData = [
-    { subject: 'Agressividade (Kills)', A: myP_Kills, B: isHealer ? 5 : 65 },
-    { subject: 'Sustento Defensivo', A: myP_Surv, B: 70 },
-    { subject: 'Dano Zerg (DPS)', A: myP_Dmg, B: isHealer ? 5 : 60 },
-    { subject: 'Sustain Geral (Heal)', A: myP_Heal, B: isHealer ? 75 : 5 },
-    { subject: 'Frequência Vencedora', A: myP_Win, B: 55 },
+    { subject: 'Agressividade (Kills)', A: Math.min(100, Math.round(scoreKills)), B: 50 },
+    { subject: 'Sustento Defensivo', A: Math.round(scoreSurv), B: Math.round(gSurv) },
+    { subject: 'Dano Zerg (DPS)', A: Math.min(100, Math.round(scoreDmg)), B: isHealer ? 0 : 50 },
+    { subject: 'Sustain Geral (Heal)', A: Math.min(100, Math.round(scoreHeal)), B: isHealer ? 50 : 0 },
+    { subject: 'Frequência Vencedora', A: myP_Win, B: 50 }, // B = 50 pois a guilda ganha e perde, meta = 50%
   ]
 
   // ============== NEMESIS & FREGUES ==================
@@ -218,8 +263,19 @@ async function getPlayerProfile(playerName: string) {
 }
 
 // ALGORITMO DE COACHING 
-function generateCoachAdvice(weapons: any[]) {
+function generateCoachAdvice(weapons: any[], totalBattles: number) {
   if (weapons.length === 0) return null
+
+  if (totalBattles < 3) {
+    return {
+      type: 'neutral',
+      icon: 'hourglass_empty',
+      color: 'var(--text-400)',
+      title: 'Amostragem Insuficiente',
+      text: `Poucos dados ainda (apenas ${totalBattles} CTAs). Participe de mais ZvZs com a guilda para um diagnóstico preciso do seu impacto no Meta.`,
+      weaponRaw: null
+    }
+  }
 
   const pW = weapons[0] 
   const pWinRate = Math.round((pW.wins / pW.uses) * 100)
@@ -241,7 +297,8 @@ function generateCoachAdvice(weapons: any[]) {
       icon: 'psychology',
       color: 'var(--cyan)',
       title: 'Talento Oculto Detectado!',
-      text: `O banco notou algo: Mesmo que use [${pW.weapon}] prioritariamente (${pWinRate}% de WinRate), seu aproveitamento com [${hiddenGem.weapon}] atinge ${Math.round((hiddenGem.wins / hiddenGem.uses) * 100)}% de maestria em ${hiddenGem.uses} lutas.`
+      text: `O banco notou algo: Mesmo que use [${pW.weapon}] prioritariamente (${pWinRate}% de WinRate), seu aproveitamento com [${hiddenGem.weapon}] atinge ${Math.round((hiddenGem.wins / hiddenGem.uses) * 100)}% de maestria em ${hiddenGem.uses} lutas.`,
+      weaponRaw: hiddenGem.rawWeapon
     }
   }
 
@@ -252,7 +309,8 @@ function generateCoachAdvice(weapons: any[]) {
       icon: 'trending_down',
       color: '#ef4444',
       title: 'Baixo Desempenho Relativo',
-      text: `Aviso Tático: Seu engajamento com [${pW.weapon}] está ${Math.abs(pW.relativePct)}% abaixo da Média da Guilda no quesito ${pW.compareLabel}. Se posicione melhor na Zerg para garantir o uso eficiente de suas habilidades.`
+      text: `Aviso Tático: Seu engajamento com [${pW.weapon}] está ${Math.abs(pW.relativePct)}% abaixo da Média da Guilda no quesito ${pW.compareLabel}. Se posicione melhor na Zerg para garantir o uso eficiente de suas habilidades.`,
+      weaponRaw: pW.rawWeapon
     }
   }
 
@@ -262,16 +320,25 @@ function generateCoachAdvice(weapons: any[]) {
       icon: 'verified',
       color: '#10b981',
       title: 'Maestria Certificada T8 (Supera Média)',
-      text: `Absolutamente essencial. Você carrega a espinha dorsal nas vitórias usando [${pW.weapon}]! ${pW.relativePct > 0 ? `Seu ${pW.compareLabel} é ${pW.relativePct}% MAIOR que a média dos outros jogadores que tentam usar essa arma.` : ''}`
+      text: `Absolutamente essencial. Você carrega a espinha dorsal nas vitórias usando [${pW.weapon}]! ${pW.relativePct > 0 ? `Seu ${pW.compareLabel} é ${pW.relativePct}% MAIOR que a média dos outros jogadores que tentam usar essa arma.` : ''}`,
+      weaponRaw: pW.rawWeapon
     }
   }
 
+  // Texto do padrão: contextualizado com dados reais
+  const winLabel = pWinRate >= 55 ? 'acima da média' : pWinRate >= 45 ? 'dentro do esperado' : 'abaixo do ideal'
+  const relativeComment = pW.relativePct > 0 
+    ? ` Seu ${pW.compareLabel} está ${pW.relativePct}% acima da média dos que usam essa arma na guilda — um sinal positivo.`
+    : pW.relativePct < -10 
+    ? ` Atenção: seu ${pW.compareLabel} está ${Math.abs(pW.relativePct)}% abaixo da média do core — foque em melhorar o posicionamento.`
+    : ''
   return {
     type: 'neutral',
     icon: 'monitoring',
     color: 'var(--text-400)',
     title: 'Monitoramento Padrão Ativo',
-    text: `Você tem flutuado no meta confortavelmente usando [${pW.weapon}]. Seu impacto é consistente (${pWinRate}% WR). ${pW.relativePct > 0 ? `Seu desempenho se destaca ${pW.relativePct}% acima da média do core.` : ''}`
+    text: `Análise baseada em ${totalBattles} CTAs registrados. Sua arma principal [${pW.weapon}] tem WinRate de ${pWinRate}% (${winLabel} para a guilda).${relativeComment} Continue participando para dados mais precisos.`,
+    weaponRaw: pW.rawWeapon
   }
 }
 
@@ -292,7 +359,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
   }
 
   const { totalBattles, winRate, weapons } = profile.globalStats
-  const aiCoach = generateCoachAdvice(weapons)
+  const aiCoach = generateCoachAdvice(weapons, totalBattles)
   const mainWeapon = weapons[0]
   
   // Render match history
@@ -384,6 +451,11 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                   <span style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: aiCoach.color }}>
                     {aiCoach.title}
                   </span>
+                  {aiCoach.weaponRaw && (
+                    <div style={{ marginLeft: 'auto' }}>
+                      <WeaponIcon rawWeapon={aiCoach.weaponRaw} size={48} />
+                    </div>
+                  )}
                 </div>
                 <p style={{ color: 'var(--text-900)', fontSize: 13, lineHeight: 1.6, fontWeight: 500 }}>
                   {aiCoach.text}
@@ -427,9 +499,12 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                           <span style={{ opacity: 0.6, fontSize: 9, display: 'block', marginBottom: 2, color: 'var(--text-400)', textTransform: 'uppercase' }}>
                             {w.role}
                           </span>
-                          <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: 'var(--amber)', textDecoration: 'none' }} className="hover:text-cyan">
-                            {w.weapon}
-                          </a>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <WeaponIcon rawWeapon={w.rawWeapon} size={32} />
+                            <a href={albion2d_link} data-tooltip="Ver item no Albion2D" target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: 'var(--amber)', textDecoration: 'none' }} className="hover:text-cyan">
+                              {w.weapon}
+                            </a>
+                          </div>
                         </td>
                         <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 800 }}>{w.uses}x</td>
                         <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{kda}</td>
@@ -542,10 +617,13 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                      </div>
 
                      <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, gap: 4 }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontWeight: 800, color: 'var(--text-900)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
-                            {formatWeaponName(match.weapon)}
-                          </span>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <a href={`https://albionbb.com/battle/${match.battle_id}`} data-tooltip="Ver detalhes no AlbionBB" target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }} className="hover:text-cyan">
+                            <WeaponIcon rawWeapon={match.weapon} size={28} />
+                            <span style={{ fontWeight: 800, color: 'var(--text-900)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+                              {formatWeaponName(match.weapon)}
+                            </span>
+                          </a>
                           <span style={{ fontSize: 11, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>{match.kills} / {match.deaths} / -</span>
                        </div>
 

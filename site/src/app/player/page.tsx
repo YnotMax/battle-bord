@@ -1,7 +1,32 @@
 import { Suspense } from 'react'
 import { SearchInput } from '@/components/Navigation'
+import { createClient } from '@supabase/supabase-js'
 
-export default function PlayerSearchPage() {
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const sb = createClient(supabaseUrl, supabaseAnonKey)
+
+async function getTopPlayers() {
+  // Pega uma boa amostra dos dados (ex: últimas 2000 ocorrências, que cobre muita coisa)
+  const res = await sb.from('player_stats').select('player_name').limit(2000).order('battle_id', { ascending: false })
+  if (!res.data) return []
+
+  const counts: Record<string, number> = {}
+  res.data.forEach(p => {
+    if (!p.player_name) return
+    counts[p.player_name] = (counts[p.player_name] || 0) + 1
+  })
+
+  // Ordena por presença e pega os 20 primeiros
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(entry => ({ name: entry[0], count: entry[1] }))
+}
+
+export default async function PlayerSearchPage() {
+  const topPlayers = await getTopPlayers()
+
   return (
     <div style={{ 
       display: 'flex', 
@@ -43,6 +68,32 @@ export default function PlayerSearchPage() {
           </div>
         </div>
       </div>
+
+      {topPlayers.length > 0 && (
+        <div className="anim-up glass panel" style={{ width: '100%', maxWidth: 800, marginTop: 16, animationDelay: '150ms' }}>
+          <div className="panel-header" style={{ justifyContent: 'center' }}>
+            <span className="section-hd" style={{ fontSize: 14 }}>Operadores Mais Ativos</span>
+          </div>
+          <div className="panel-body" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', padding: '20px' }}>
+            {topPlayers.map(p => (
+              <a 
+                key={p.name} 
+                href={`/player/${p.name}`}
+                className="hover:text-cyan"
+                style={{ 
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: 'var(--bg)', padding: '6px 12px', borderRadius: 20,
+                  fontSize: 13, fontWeight: 600, color: 'var(--text-700)', textDecoration: 'none',
+                  border: '1px solid var(--border-lo)'
+                }}
+              >
+                {p.name}
+                <span style={{ fontSize: 10, color: 'var(--cyan)', background: 'var(--cyan-10)', padding: '2px 6px', borderRadius: 10 }}>{p.count}x</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="anim-up" style={{ marginTop: 40, animationDelay: '200ms' }}>
         <div className="label" style={{ fontSize: 10, letterSpacing: '0.2em' }}>SISTEMA DE MENTORIA INDIVIDUAL</div>

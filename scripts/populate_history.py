@@ -7,8 +7,8 @@ USO: Executado pelo 'Encher_Banco_Com_Historico.bat'. Usado apenas para
 
 from crawler import process_battle_details, supabase, GUILD_NAME, GUILD_ID
 import requests
-
 import time
+import sys
 
 def fetch_deep_history(pages_to_scan=15):
     print(f"=====================================")
@@ -56,5 +56,11 @@ def fetch_deep_history(pages_to_scan=15):
     print("\n[+] FINALIZADO! Todos os dados passados foram capturados com sucesso.")
 
 if __name__ == "__main__":
-    # Varrendo até a página 2 da API para pegar apenas batalhas mais recentes e evitar bloqueios
-    fetch_deep_history(2)
+    pages = 2
+    if len(sys.argv) > 1:
+        try:
+            pages = int(sys.argv[1])
+        except ValueError:
+            pass
+    # Varrendo o número de páginas solicitado
+    fetch_deep_history(pages)

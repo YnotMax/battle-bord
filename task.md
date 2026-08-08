@@ -13,18 +13,22 @@ Acompanhe por aqui nosso progresso técnico na construção de cada fase.
   - `[x]` Criar a Página `/stats` (Tabelas e Rankings Filtrados).
 
 - `[x]` **Fase 3: O Zerg Police & Obras de Arte Virtuais**
-  - `[x]` Gráfico de Composição (Pizza Média da Zerg).
-  - `[-]` Verificador Automático e Alerta Webhook do Discord (Adiado).
-  - `[x]` O Inspetor Parcial de Builds (Weapon Checker) implementado no banco.
+## Fase 2 — Automação e Dados Corretos
+- `[x]` Script Python `crawler.py`: Filtrar guildas aliadas dinamicamente (ALLIED_GUILDS fallback incluído).
+- `[x]` Bat `Encher_Banco_Com_Historico.bat`: Transformado em menu interativo perguntando a quantidade de páginas (ex: 5, 10, 20).
 
-- `[x]` **Fase 4: Elite Polishing e Escalabilidade In-House**
-  - `[x]` Filtros Globais de Data no Dashboard Inicial (`/`).
-  - `[x]` Histórico Visual de Atividade ("Sparklines" Github-style) na tabela de Presença (`/presence`).
-  - `[x]` IA de Conselho Tático: Cruzar Win Rate x Composição no Zerg HQ.
-  - `[x]` Migração do Script Crawler para Automação na Nuvem (Vercel Cron / Automático 24/7).
-
-- `[ ]` **Fase 5: Módulo de Mentoria Individual (Player Coaching AI)**
-  - `[ ]` Criação de URL de Perfil Individual (`/player/[name]`).
-  - `[ ]` Feedback Algorítmico de Armas (Aconselhamento se joga melhor de DPS X ou Y).
-  - `[ ]` Histórico Profundo de Win Rate por Arma Específica e Tracking de KDA individual.
-
+## Fase 3 — Melhorias de UX e Contexto
+- `[x]` `globals.css`: Criado sistema de tooltip global em CSS puro (`top: 100%` para evitar cortes).
+- `[x]` Componente `WeaponIcon`: Criado componente para renderizar ícones da API oficial (`weapon.type` corrigido).
+- `[x]` Dashboard (`/`): Adicionadas legendas e tooltips explicativos nos KPIs (Top DPS/Heals/Kills).
+- `[x]` Dashboard (`/`): Gráfico de Win Rate melhorado (eixo Y e eixo X com datas reais + tooltips nativos em SVG).
+- `[x]` Busca (`/player`): Mostrando listagem inicial dos 20 operadores mais ativos.
+- `[x]` Perfil (`/player/[name]`): Eixos do Radar usando dados reais da guilda calculados direto do banco.
+- `[x]` Perfil (`/player/[name]`): Melhorados textos do Coaching (amostragem insuficiente) e adicionado WeaponIcon.
+- `[x]` Perfil (`/player/[name]`): Tooltips adicionados nos links (AlbionBB, Albion2D).
+- `[x]` Presença (`/presence`): Tooltip adicionado nas linhas apontando para o perfil do jogador.
+- `[x]` Zerg HQ (`/zerg`): Banner explicativo sobre a página e tooltips no gráfico de pizza inseridos.
+- `[x]` Mentoria (`/guild`): Removido label ambíguo "K" de kills.
+- `[x]` Mentoria (`/guild`): Adicionadas explicações contextuais nas seções (badges).
+- `[x]` Mentoria (`/guild`): Adicionada label explicando Armas Off-Meta Secretas.
+- `[x]` Mentoria (`/guild`): Ajustada regra de Red Flags (exclui tanks/supports da culpa) e adicionado WeaponIcon.

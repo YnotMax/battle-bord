@@ -48,6 +48,10 @@ def reimport_players():
 
         rows = []
         for p in imortais:
+            # weapon.type = ID completo com Tier e Enchant (ex: T5_2H_LONGBOW@1)
+            # Se o jogador morreu sem atacar, a API retorna weapon=None — é normal.
+            weapon_obj = p.get("weapon") or {}
+            weapon_id = weapon_obj.get("type") or weapon_obj.get("name") or "Desconhecida"
             rows.append({
                 "battle_id": battle_id,
                 "player_name": p.get("name"),
@@ -57,7 +61,7 @@ def reimport_players():
                 "average_ip": p.get("ip", 0),
                 "kills": p.get("kills", 0),
                 "deaths": p.get("deaths", 0),
-                "weapon": p.get("weapon", {}).get("name", "Desconhecida")
+                "weapon": weapon_id
             })
 
         if rows:

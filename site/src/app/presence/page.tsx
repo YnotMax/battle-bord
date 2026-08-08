@@ -119,7 +119,7 @@ export default async function PresencePage() {
                     <tr key={p.name} style={{ animationDelay: `${(i % 10) * 20}ms` }}>
                       <td style={{ color: 'var(--text-500)', fontSize: 12 }}>{i + 1}</td>
                       <td>
-                        <a href={`/player/${p.name}`} style={{ fontWeight: 700, color: 'var(--text-900)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }} className="hover:text-cyan">
+                        <a href={`/player/${p.name}`} data-tooltip="Ver Perfil Tático Individual" style={{ fontWeight: 700, color: 'var(--text-900)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }} className="hover:text-cyan">
                           {p.name}
                           <span className="material-symbols-outlined" style={{ fontSize: 13, opacity: 0.5 }}>open_in_new</span>
                         </a>
@@ -143,7 +143,7 @@ export default async function PresencePage() {
                           {p.sparkline.map((attended, sid) => (
                             <div 
                               key={sid} 
-                              title={attended ? "Presente" : "Faltou"}
+                              data-tooltip={attended ? "Presente" : "Faltou"}
                               style={{
                                 width: 8, height: 16, borderRadius: 2,
                                 backgroundColor: attended ? 'var(--cyan)' : 'rgba(255,255,255,0.05)',

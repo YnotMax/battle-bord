@@ -5,28 +5,33 @@ color 0D
 :: =========================================================================
 :: PASSO 1 - ARQUIVO PARA POPULAR O BANCO DE DADOS PELA PRIMEIRA VEZ
 :: =========================================================================
-:: O QUE ESSE ARQUIVO FAZ?
-:: Ele roda o script 'populate_history.py' que busca múltiplas páginas de 
-:: histórico no AlbionBB. Use este arquivo apenas quando quiser "encher" o
-:: painel com muitas batalhas passadas de uma só vez (ex: depois de limpar o banco).
-::
-:: QUANDO USAR?
-:: Somente uma vez no início (ou após zerar o banco de dados).
-:: NÃO use isso diariamente, senão a API do AlbionBB pode bloquear sua conexão.
-:: =========================================================================
 
 echo.
 echo ========================================================
 echo    BATTLE BOARD IMORTAIS: MAQUINA DO TEMPO (HISTORICO)
 echo ========================================================
 echo.
-echo Iniciando coleta massiva. Isso vai lotar o seu banco com estatisticas antigas pra 
-echo o painel ficar riquissimo! Pode demorar alguns minutos.
+echo Quantas paginas de historico voce quer puxar?
+echo 1 pagina = +- 1 dia de ZvZs (dependendo da atividade)
+echo.
+echo [1] 5 paginas  (Rapido, ~1 semana)
+echo [2] 10 paginas (Padrao, ~2 semanas)
+echo [3] 20 paginas (Demorado, ~1 mes ou mais)
+echo.
+set /p escolha="Digite o numero da sua escolha (1, 2 ou 3): "
+
+if "%escolha%"=="1" set pages=5
+if "%escolha%"=="2" set pages=10
+if "%escolha%"=="3" set pages=20
+if "%pages%"=="" set pages=10
+
+echo.
+echo Iniciando coleta massiva de %pages% paginas...
+echo Pode demorar alguns minutos dependendo da escolha.
 echo.
 
 cd /d "%~dp0"
-python scripts\populate_history.py
-
+python scripts\populate_history.py %pages%
 
 echo.
 echo ========================================================

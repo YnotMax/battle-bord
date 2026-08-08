@@ -355,7 +355,7 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
             <div className="panel-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dot dot-crimson" />
-                <span className="section-hd">Top DPS</span>
+                <span className="section-hd" data-tooltip="Soma do dano em todas as lutas do período">Top DPS</span>
               </div>
               <span className="label">Dano Total</span>
             </div>
@@ -401,7 +401,7 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
             <div className="panel-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dot dot-emerald" />
-                <span className="section-hd">Top Healers</span>
+                <span className="section-hd" data-tooltip="Soma da cura em todas as lutas do período">Top Healers</span>
               </div>
               <span className="label">Cura Total</span>
             </div>
@@ -447,7 +447,7 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
             <div className="panel-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dot dot-amber" />
-                <span className="section-hd">Top Kills</span>
+                <span className="section-hd" data-tooltip="Soma de abates participados em todas as lutas do período">Top Kills</span>
               </div>
               <span className="label">Kills Totais</span>
             </div>
@@ -474,7 +474,8 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
                       {p.roles.map(r => (
                         <span key={r} className={roleCss(r)} style={{ fontSize: 8 }}>{roleLabel(r)}</span>
                       ))}
-                      <span className="label-sm">{p.battles}x · {p.kills}K/{p.deaths}D</span>
+                      <span className="label-sm" data-tooltip="Participações em batalhas">{p.battles}x</span>
+                      <span className="label-sm" style={{ paddingLeft: 4 }}>· {p.kills} kills / {p.deaths} deaths</span>
                     </div>
                   </div>
                   <span style={{
@@ -500,8 +501,11 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
         for (let i = 0; i < ordered.length; i += chunkSize) {
           const slice = ordered.slice(i, i + chunkSize)
           const w = slice.filter(b => b.result === 'WIN').length
+          const firstDate = slice[0]?.start_time ? new Date(slice[0].start_time).toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' }) : ''
+          const lastDate = slice[slice.length - 1]?.start_time ? new Date(slice[slice.length - 1].start_time).toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' }) : ''
+          const dateLabel = firstDate === lastDate ? firstDate : `${firstDate} a ${lastDate}`
           chunks.push({
-            label: `${i + 1}–${Math.min(i + chunkSize, ordered.length)}`,
+            label: dateLabel,
             wr: Math.round((w / slice.length) * 100),
             n: slice.length
           })
@@ -520,33 +524,47 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--cyan)' }}>trending_up</span>
-                <span className="section-hd">Evolução do Win Rate</span>
+                <span className="section-hd" data-tooltip="Da luta mais antiga (E) para a mais recente (D)">Evolução do Win Rate</span>
               </div>
-              <span className="label" style={{ fontSize: 10 }}>Agrupado em blocos de {chunkSize} batalha(s)</span>
+              <span className="label" style={{ fontSize: 10 }} data-tooltip={`Média a cada ${chunkSize} lutas consecutivas`}>
+                Blocos de {chunkSize}
+              </span>
             </div>
-            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 70, overflow: 'visible' }}>
-              {/* Linhas de grid */}
-              {[25, 50, 75].map(v => (
-                <line key={v} x1="0" y1={H - (v / 100) * H} x2={W} y2={H - (v / 100) * H}
-                  stroke="rgba(203,213,225,0.1)" strokeWidth="0.5" strokeDasharray="2,2" />
-              ))}
-              {/* Linha de 50% */}
-              <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="rgba(203,213,225,0.2)" strokeWidth="0.8" />
-              {/* Área preenchida */}
-              <path d={fillD} fill="rgba(0,255,157,0.08)" />
-              {/* Linha */}
-              <path d={pathD} fill="none" stroke="var(--cyan)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              {/* Pontos */}
-              {pts.map((p, i) => (
-                <g key={i}>
-                  <circle cx={p.x} cy={p.y} r="2.5" fill={p.wr >= 50 ? '#00ff9d' : '#ef4444'} stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
-                  <text x={p.x} y={p.y - 5} textAnchor="middle" fontSize="4.5"
-                    fill={p.wr >= 50 ? '#00ff9d' : '#ef4444'} fontWeight="700" fontFamily="monospace">
-                    {p.wr}%
-                  </text>
-                </g>
-              ))}
-            </svg>
+            <div style={{ display: 'flex', gap: 8, height: 90 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: 9, color: 'var(--text-500)', fontFamily: 'var(--font-mono)', paddingBottom: 15, paddingTop: 4 }}>
+                <span>100%</span>
+                <span>50%</span>
+                <span>0%</span>
+              </div>
+              <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                {/* Linhas de grid */}
+                {[25, 50, 75].map(v => (
+                  <line key={v} x1="0" y1={H - (v / 100) * H} x2={W} y2={H - (v / 100) * H}
+                    stroke="rgba(203,213,225,0.1)" strokeWidth="0.5" strokeDasharray="2,2" />
+                ))}
+                {/* Linha de 50% */}
+                <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="rgba(203,213,225,0.2)" strokeWidth="0.8" />
+                {/* Área preenchida */}
+                <path d={fillD} fill="rgba(0,255,157,0.08)" />
+                {/* Linha */}
+                <path d={pathD} fill="none" stroke="var(--cyan)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                {/* Pontos */}
+                {pts.map((p, i) => (
+                  <g key={i} style={{ cursor: 'pointer' }}>
+                    <title>{`${p.label} : ${p.wr}% (de ${p.n} lutas)`}</title>
+                    {/* Hitbox maior invisível */}
+                    <circle cx={p.x} cy={p.y} r="6" fill="transparent" />
+                    {/* Ponto visível */}
+                    <circle cx={p.x} cy={p.y} r="2.5" fill={p.wr >= 50 ? '#00ff9d' : '#ef4444'} stroke="rgba(0,0,0,0.3)" strokeWidth="0.5" />
+                    <text x={p.x} y={p.y - 5} textAnchor="middle" fontSize="4.5"
+                      fill={p.wr >= 50 ? '#00ff9d' : '#ef4444'} fontWeight="700" fontFamily="monospace"
+                      style={{ pointerEvents: 'none' }}>
+                      {p.wr}%
+                    </text>
+                  </g>
+                ))}
+              </svg>
+            </div>
           </div>
         )
       })()}

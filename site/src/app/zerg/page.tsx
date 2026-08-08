@@ -110,11 +110,11 @@ function ZergHQContent() {
   // Conic gradient preparation
   let currentStart = 0
   const slices = [
-    { color: '#3b82f6', percent: pTank, label: 'Tank' },
-    { color: '#f59e0b', percent: pSupport, label: 'Support' },
-    { color: '#10b981', percent: pHealer, label: 'Healer' },
-    { color: '#ef4444', percent: pMelee, label: 'Melee' },
-    { color: '#f97316', percent: pRange, label: 'Range' },
+    { color: '#3b82f6', percent: pTank, label: 'Tank', count: roles.tank },
+    { color: '#f59e0b', percent: pSupport, label: 'Support', count: roles.support },
+    { color: '#10b981', percent: pHealer, label: 'Healer', count: roles.healer },
+    { color: '#ef4444', percent: pMelee, label: 'Melee', count: roles.melee },
+    { color: '#f97316', percent: pRange, label: 'Range', count: roles.range },
   ].map(s => {
     const start = currentStart
     const end = currentStart + s.percent
@@ -161,7 +161,7 @@ function ZergHQContent() {
           <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--cyan)' }}>biotech</span>
           <div>
             <h1 className="section-hd" style={{ fontSize: 24 }}>Zerg HQ (Composição)</h1>
-            <div className="label">Laboratório de Análise Tática e Policiamento de Gear.</div>
+            <div className="label" style={{ maxWidth: 600, marginTop: 4 }}>Painel de Inteligência Tática. Analise se a guilda está respeitando a proporção ideal entre Tanks, Healers, Suportes e DPS nas lutas oficiais.</div>
           </div>
         </div>
 
@@ -175,7 +175,7 @@ function ZergHQContent() {
         {/* PIE CHART COMPOSITION */}
         <div className="glass panel anim-up">
           <div className="panel-header">
-            <span className="section-hd">Composição Média da Zerg</span>
+            <span className="section-hd">Distribuição de Roles nas Batalhas</span>
             <div className="label">Baseado em {totalBattles} batalhas analisadas no filtro selecionado.</div>
           </div>
           <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 32 }}>
@@ -201,7 +201,7 @@ function ZergHQContent() {
               {/* Legenda Classes */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {slices.map((s, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div key={idx} data-tooltip={`${s.count} jogadores de ${total}`} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'help' }}>
                     <span style={{ width: 12, height: 12, borderRadius: 3, background: s.color }} />
                     <span style={{ width: 60, fontWeight: 700, color: 'var(--text-900)' }}>{s.label}</span>
                     <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-400)', width: 40, textAlign: 'right' }}>

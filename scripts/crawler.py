@@ -49,6 +49,13 @@ def fetch_recent_battles():
         print(f"Nova Batalha encontrada: {battle_id}. Processando dados densos...")
         process_battle_details(battle_id)
 
+# Guildas que jogam na nossa ALIANÇA (não são inimigas)
+# Serve de fallback caso o campo "alliance" venha vazio na API
+ALLIED_GUILDS = [
+    "We Profit",
+    # Adicione aqui outras guildas aliadas
+]
+
 def process_battle_details(battle_id):
     url = f"https://api.albionbb.com/us/battles/{battle_id}"
     response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -66,7 +73,26 @@ def process_battle_details(battle_id):
         print(f"Batalha ignorada. Menos de 21 jogadores da guilda ({imortais_info.get('players', 0) if imortais_info else 0} presentes).")
         return
         
-    inimigos = [g.get("name") for g in guilds if g.get("name") and g.get("name") != imortais_info.get("name")][:3]
+    my_alliance = imortais_info.get("alliance") or imortais_info.get("allianceName") or imortais_info.get("alliance_name")
+    
+    # Inimigos: guildas que não são a nossa E não estão na nossa aliança E não estão em ALLIED_GUILDS
+    def is_enemy(g):
+        g_name = g.get("name")
+        if not g_name or g_name.strip().lower() == GUILD_NAME.strip().lower():
+            return False
+            
+        # Verifica se está na lista hardcoded de aliadas
+        if g_name.strip().lower() in [a.strip().lower() for a in ALLIED_GUILDS]:
+            return False
+            
+        # Verifica pelo ID/Nome da aliança (se a API forneceu)
+        g_alliance = g.get("alliance") or g.get("allianceName") or g.get("alliance_name")
+        if my_alliance and g_alliance == my_alliance:
+            return False
+            
+        return True
+
+    inimigos = [g.get("name") for g in guilds if is_enemy(g)][:3]
     opponents_str = ", ".join(inimigos)
     if not opponents_str:
         opponents_str = "Vários"
@@ -95,6 +121,13 @@ def process_battle_details(battle_id):
     
     player_rows = []
     for p in imortais_participants:
+        # weapon.type = ID completo com Tier e Enchant (ex: T5_2H_LONGBOW@1)
+        # weapon.name = apenas o nome base sem tier (ex: 2H_LONGBOW)
+        # Salvamos o 'type' para garantir que WeaponIcon receba o ID exato e carregue a imagem certa.
+        # Se o jogador morreu sem atacar, a API retorna weapon=None — isso é um dado da API, não um bug.
+        weapon_obj = p.get("weapon") or {}
+        weapon_id = weapon_obj.get("type") or weapon_obj.get("name") or "Desconhecida"
+        
         player_rows.append({
             "battle_id": battle_id,
             "player_name": p.get("name"),
@@ -104,7 +137,7 @@ def process_battle_details(battle_id):
             "average_ip": p.get("ip", 0),
             "kills": p.get("kills", 0),
             "deaths": p.get("deaths", 0),
-            "weapon": p.get("weapon", {}).get("name", "Desconhecida")
+            "weapon": weapon_id
         })
         
     if player_rows:

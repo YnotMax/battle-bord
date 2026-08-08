@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { DateFilter } from '../../components/DateFilter'
+import { WeaponIcon } from '@/components/WeaponIcon'
 
 export const revalidate = 0
 
@@ -96,7 +97,9 @@ async function getMentorshipData(days: number) {
   // 2. ANALYTICS DE ARMAMENTO (MACRO GUILDA)
   // ============================================
   const wStats: Record<string, { 
-    weapon: string, rawWeapon: string, role: string, 
+    weapon: string, rawWeapon: string,
+    roleCounts: Record<string, number>, // contagem por role para pegar o dominante
+    role: string, // role mais frequente
     uses: number, wins: number,
     kills: number, deaths: number, healing: number, damage: number 
   }> = {}
@@ -116,7 +119,11 @@ async function getMentorshipData(days: number) {
     const wRaw = p.weapon || "Desconhecida"
     const w = formatWeaponName(wRaw) 
 
-    if (!wStats[w]) wStats[w] = { weapon: w, rawWeapon: wRaw, role: p.role, uses: 0, wins: 0, kills: 0, deaths: 0, healing: 0, damage: 0 }
+    if (!wStats[w]) wStats[w] = { weapon: w, rawWeapon: wRaw, roleCounts: {}, role: p.role, uses: 0, wins: 0, kills: 0, deaths: 0, healing: 0, damage: 0 }
+    
+    // Acumula o role para pegar o mais frequente depois
+    const pRoleLc = (p.role || 'dps').toLowerCase()
+    wStats[w].roleCounts[pRoleLc] = (wStats[w].roleCounts[pRoleLc] || 0) + 1
     
     wStats[w].uses += 1
     wStats[w].kills += p.kills
@@ -138,7 +145,11 @@ async function getMentorshipData(days: number) {
     pLeaderboard[plName].damage += p.damage_done || 0
   })
 
-  const wArray = Object.values(wStats)
+  // Resolve o role dominante de cada arma após o loop
+  const wArray = Object.values(wStats).map(ws => ({
+    ...ws,
+    role: Object.entries(ws.roleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || ws.role
+  }))
   const plArray = Object.values(pLeaderboard)
 
   // Rank Armas
@@ -160,7 +171,14 @@ async function getMentorshipData(days: number) {
   const topPlayerHealers = [...plArray].filter(p => p.fights >= 3 && p.healing > 1000).sort((a, b) => (b.healing / b.fights) - (a.healing / a.fights)).slice(0, 8)
   const safestPlayers = [...plArray].filter(p => p.fights >= 5).sort((a, b) => (a.deaths / a.fights) - (b.deaths / b.fights)).slice(0, 8)
 
-  const warningWeapons = wArray.filter(w => w.uses >= Math.max(5, battles.length*0.3) && (w.wins / w.uses) < 0.40)
+  const warningWeapons = wArray.filter(w => {
+    const r = w.role.toLowerCase()
+    const isTankOrSupp = r.includes('tank') || r.includes('support')
+    if (isTankOrSupp) return false
+    // Threshold dinâmico: mínimo de 5 usos OU 30% das batalhas (o que for maior)
+    const threshold = Math.max(5, battles.length * 0.3)
+    return w.uses >= threshold && (w.wins / w.uses) < 0.40
+  })
 
   return {
     battlesAnalyzed: battles.length,
@@ -224,7 +242,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - TOP FRAGGERS */}
               <div className="glass panel" style={{ borderTop: '3px solid #ef4444', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: '#ef4444' }}>Top Kills (Abates)</span>
+                  <span className="section-hd" style={{ fontSize: 13, color: '#ef4444' }} data-tooltip="Total de participações em kills no período">Top Kills (Abates)</span>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.killers.map((p, i) => (
@@ -233,7 +251,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                         <span style={{ fontSize: 11, color: 'var(--text-400)', width: 14 }}>{i+1}.</span>
                         <a href={`/player/${p.name}`} style={{ fontWeight: 800, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none' }} className="hover:text-cyan">{p.name}</a>
                       </div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444' }}>{p.kills} K</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444' }}>{p.kills} kills</div>
                     </div>
                   ))}
                 </div>
@@ -242,7 +260,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - TOP DAMAGE */}
               <div className="glass panel" style={{ borderTop: '3px solid #f97316', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(249, 115, 22, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: '#f97316' }}>Top Dano Bruto (DPS Médio)</span>
+                  <span className="section-hd" style={{ fontSize: 13, color: '#f97316' }} data-tooltip="Dano médio por batalha (jogadores com 3+ CTAs)">Top Dano Bruto (DPS Médio)</span>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.damage.map((p, i) => (
@@ -260,7 +278,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - TOP HEALERS */}
               <div className="glass panel" style={{ borderTop: '3px solid #10b981', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(16, 185, 129, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: '#10b981' }}>Top Curadores (Heal Vivo)</span>
+                  <span className="section-hd" style={{ fontSize: 13, color: '#10b981' }} data-tooltip="Quantidade de cura por batalha (jogadores com 3+ CTAs)">Top Curadores (Heal Vivo)</span>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.healers.map((p, i) => (
@@ -278,7 +296,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - MURALHA */}
               <div className="glass panel" style={{ borderTop: '3px solid var(--cyan)', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(6, 182, 212, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: 'var(--cyan)' }}>Maior Sobrevivência (Tanks)</span>
+                  <span className="section-hd" style={{ fontSize: 13, color: 'var(--cyan)' }} data-tooltip="Percentual de sobrevivência nas lutas (jogadores com 5+ CTAs)">Maior Sobrevivência (Tanks)</span>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.safest.map((p, i) => {
@@ -318,6 +336,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                       <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 11, color: 'var(--text-400)', width: 14 }}>{i+1}.</span>
+                          <WeaponIcon rawWeapon={w.rawWeapon} size={36} />
                           <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none' }} className="hover:text-cyan">
                             {w.weapon}
                           </a>
@@ -341,6 +360,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                       <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 11, color: 'var(--text-400)', width: 14 }}>{i+1}.</span>
+                          <WeaponIcon rawWeapon={w.rawWeapon} size={36} />
                           <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none' }} className="hover:text-cyan">
                             {w.weapon}
                           </a>
@@ -362,6 +382,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                         return (
                         <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <WeaponIcon rawWeapon={w.rawWeapon} size={32} />
                             <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none'}} className="hover:text-cyan">{w.weapon}</a>
                           </div>
                           <span style={{ fontSize: 12, fontWeight: 800, color: '#10b981' }}>{Math.round(w.healing / w.uses).toLocaleString()} hp/luta</span>
@@ -371,13 +392,14 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                  </div>
 
                  <div className="glass panel" style={{ borderLeft: '4px solid var(--amber)', display: 'flex', flexDirection: 'column' }}>
-                    <div className="panel-header" style={{ padding: '12px 16px' }}><span className="section-hd" style={{ fontSize: 11 }}>Armas Fora do Meta (Mais Vitórias Mistas)</span></div>
+                    <div className="panel-header" style={{ padding: '12px 16px' }}><span className="section-hd" style={{ fontSize: 11 }} data-tooltip="Armas menos convencionais, mas que garantiram vitória (Mais de 50% WR)">Armas Fora do Meta (Mais Vitórias Mistas)</span></div>
                     <div className="panel-body scroll" style={{ padding: 0 }}>
                       {weapons.offmeta.length > 0 ? weapons.offmeta.map((w) => {
                         const albion2d_link = `https://albiononline2d.com/pt/item/id/T8_${w.rawWeapon.replace(/^T\d_/, '').split('@')[0]}`;
                         return (
                         <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <WeaponIcon rawWeapon={w.rawWeapon} size={32} />
                             <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none'}} className="hover:text-cyan">{w.weapon}</a>
                             <span style={{ fontSize: 10, color: 'var(--text-400)'}}>({w.uses} Picks)</span>
                           </div>
@@ -403,8 +425,11 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                  {weapons.topPicked.map((w, i) => {
                     const absLink = `https://albiononline2d.com/pt/item/id/T8_${w.rawWeapon.replace(/^T\d_/, '').split('@')[0]}`;
                     return(
-                      <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-                         <a href={absLink} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none'}} className="hover:text-cyan">{w.weapon}</a>
+                      <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                           <WeaponIcon rawWeapon={w.rawWeapon} size={32} />
+                           <a href={absLink} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-900)', textDecoration: 'none'}} className="hover:text-cyan">{w.weapon}</a>
+                         </div>
                          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--cyan)' }}>{w.uses} Escolhas</span>
                       </div>
                  )})}
@@ -420,8 +445,11 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                  {weapons.bottomPicked.map((w, i) => {
                     const absLink = `https://albiononline2d.com/pt/item/id/T8_${w.rawWeapon.replace(/^T\d_/, '').split('@')[0]}`;
                     return(
-                      <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-                         <a href={absLink} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-500)', textDecoration: 'none'}} className="hover:text-cyan">{w.weapon}</a>
+                      <div key={w.weapon} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                           <WeaponIcon rawWeapon={w.rawWeapon} size={32} />
+                           <a href={absLink} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-500)', textDecoration: 'none'}} className="hover:text-cyan">{w.weapon}</a>
+                         </div>
                          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-300)' }}>Somente {w.uses}x</span>
                       </div>
                  )})}
@@ -436,6 +464,9 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
           <div className="glass panel anim-up">
             <div className="panel-header">
               <span className="section-hd">Tribunal de Rivalidades (Guildas Opostas)</span>
+            </div>
+            <div style={{ padding: '8px 16px', background: 'rgba(245, 158, 11, 0.06)', borderBottom: '1px solid rgba(245,158,11,0.15)', fontSize: 10, color: 'var(--text-400)', fontStyle: 'italic' }}>
+              ⚠️ Apenas guildas inimigas reais são contabilizadas. Se ver aliados aqui, rode o crawler para reimportar dados com o filtro ALLIED_GUILDS atualizado.
             </div>
             <div className="panel-body scroll" style={{ padding: 0 }}>
               {rivalry.map((r, i) => {
@@ -513,7 +544,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
           {/* LISTA NEGRA DAS ARMAS (TREND ANALYSIS) */}
           <div className="glass panel anim-up">
             <div className="panel-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.2)'}}>
-              <span className="section-hd" style={{ color: '#ef4444' }}>⚠️ Red Flags (Perigo de Composição)</span>
+              <span className="section-hd" style={{ color: '#ef4444' }} data-tooltip="DPS ou Healers muito usados mas com WinRate baixo (< 40%)">⚠️ Red Flags (Perigo de Composição)</span>
             </div>
             <div className="panel-body scroll">
               {weapons.warnings.length > 0 ? (
@@ -531,9 +562,12 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                        return (
                       <tr key={w.weapon}>
                         <td style={{ fontWeight: 700 }}>
-                          <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'var(--text-900)' }} className="hover:text-cyan">
-                            {w.weapon}
-                          </a>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <WeaponIcon rawWeapon={w.rawWeapon} size={36} />
+                            <a href={albion2d_link} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'var(--text-900)' }} className="hover:text-cyan">
+                              {w.weapon}
+                            </a>
+                          </div>
                         </td>
                         <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{w.uses}x</td>
                         <td style={{ textAlign: 'right', fontWeight: 800, color: '#ef4444' }}>
