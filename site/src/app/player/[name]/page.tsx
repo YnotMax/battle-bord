@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { PlayerRadar } from '../../../components/PlayerRadar'
 import { WeaponIcon } from '@/components/WeaponIcon'
 import { HintIcon } from '@/components/HintIcon'
+import { BattleTimeline, KillEventItem } from '@/components/BattleTimeline'
 
 export const revalidate = 0 
 
@@ -57,18 +58,21 @@ async function getPlayerProfile(playerName: string) {
 
   if (!data || data.length === 0) return null
 
-  // V2: Busca kill events do jogador (mortes detalhadas com timestamp e arma do killer)
+  // V2: Busca kill events do jogador (tanto mortes quanto abates do jogador)
   const { data: killEvents } = await sb
     .from('kill_events')
-    .select('timestamp, killer_name, killer_weapon, killer_weapon_norm, seconds_into_battle, is_early_death, battle_id, total_participants')
-    .ilike('victim_name', playerName)
+    .select('event_id, timestamp, victim_name, victim_guild, killer_name, killer_guild, killer_weapon, killer_weapon_norm, seconds_into_battle, is_early_death, battle_id, total_participants')
+    .or(`victim_name.ilike.${playerName},killer_name.ilike.${playerName}`)
     .order('timestamp', { ascending: false })
 
   // Busca Guild global para Relativos e Média Real (inclui average_ip para efficiency)
-  const { data: guildData } = await sb.from('player_stats').select('role, weapon, damage_done, healing_done, kills, deaths, battle_id, average_ip')
+  const [{ data: guildData }, { count: totalGuildBattlesCount }] = await Promise.all([
+    sb.from('player_stats').select('role, weapon, damage_done, healing_done, kills, deaths, battle_id, average_ip').limit(10000),
+    sb.from('battles').select('id', { count: 'exact', head: true })
+  ])
 
   // Calcula médias globais da guilda
-  let gKills = 0, gDeaths = 0, gBattles = 0
+  let gKills = 0, gDeaths = 0, gBattles = totalGuildBattlesCount || 0
   let gRoleDmg = 0, gRoleHeal = 0, gRoleBattles = 0
   let gRoleIP = 0, gRoleIPCount = 0
   
@@ -261,7 +265,7 @@ async function getPlayerProfile(playerName: string) {
   const trendDir: 'up' | 'down' | 'stable' = trendDiff >= 15 ? 'up' : trendDiff <= -15 ? 'down' : 'stable'
 
   // 2. Assiduidade: % de batalhas da guilda que o jogador participou
-  const attendanceRate = gBattles > 0 ? Math.round((matches.length / gBattles) * 100) : 0
+  const attendanceRate = gBattles > 0 ? Math.min(100, Math.round((matches.length / gBattles) * 100)) : 0
 
   // 3. KDA geral
   const kda = totalDeaths > 0 ? parseFloat((totalKills / totalDeaths).toFixed(2)) : totalKills
@@ -278,28 +282,29 @@ async function getPlayerProfile(playerName: string) {
 
   // ============== V2: KILL EVENTS (Morte Precoce + Carrasco) ==================
   const killEventsArr = (killEvents || []) as any[]
+  const victimEvents = killEventsArr.filter(e => (e.victim_name || '').toLowerCase() === playerName.toLowerCase())
 
   // 6. Taxa de Morte Precoce (morreu nos primeiros 60s da luta)
-  const earlyDeaths = killEventsArr.filter(e => e.is_early_death)
-  const taxaMortePrecoce = killEventsArr.length > 0
-    ? Math.round((earlyDeaths.length / killEventsArr.length) * 100)
+  const earlyDeaths = victimEvents.filter(e => e.is_early_death)
+  const taxaMortePrecoce = victimEvents.length > 0
+    ? Math.round((earlyDeaths.length / victimEvents.length) * 100)
     : 0
 
   // 7. Carrasco Pessoal — arma que mais o mata (normalizada)
   const carrascoMap: Record<string, { count: number, weapon: string, weaponNorm: string }> = {}
-  killEventsArr.forEach(e => {
+  victimEvents.forEach(e => {
     const norm = e.killer_weapon_norm || 'Desconhecida'
     if (!carrascoMap[norm]) carrascoMap[norm] = { count: 0, weapon: e.killer_weapon || '', weaponNorm: norm }
     carrascoMap[norm].count++
   })
   const carrascoEntries = Object.values(carrascoMap).sort((a, b) => b.count - a.count)
   const topCarrasco = carrascoEntries[0] || null
-  const topCarrascoPct = topCarrasco && killEventsArr.length > 0
-    ? Math.round((topCarrasco.count / killEventsArr.length) * 100)
+  const topCarrascoPct = topCarrasco && victimEvents.length > 0
+    ? Math.round((topCarrasco.count / victimEvents.length) * 100)
     : 0
 
   // Carrasco das últimas 5 CTAs
-  const recentKillEvents = killEventsArr.slice(0, 5)
+  const recentKillEvents = victimEvents.slice(0, 5)
   const recentCarrascoMap: Record<string, number> = {}
   recentKillEvents.forEach(e => {
     const norm = e.killer_weapon_norm || 'Desconhecida'
@@ -308,8 +313,17 @@ async function getPlayerProfile(playerName: string) {
   const recentCarrascoEntries = Object.entries(recentCarrascoMap).sort((a, b) => b[1] - a[1])
   const topRecentCarrasco = recentCarrascoEntries[0]?.[0] || null
 
+  const playerBattles = matches.map(m => ({
+    id: String(m.battle_id),
+    startTime: m.battles?.start_time || '',
+    opponents: m.battles?.opponents || 'Desconhecido',
+    result: m.battles?.result || 'UNKNOWN'
+  }))
+
   return {
     rawMatches: matches,
+    playerBattles,
+    playerKillEvents: killEventsArr as KillEventItem[],
     globalStats: {
       totalBattles: matches.length,
       winRate: myP_Win,
@@ -344,7 +358,7 @@ async function getPlayerProfile(playerName: string) {
       // V2: Kill Events
       taxaMortePrecoce,
       earlyDeathCount: earlyDeaths.length,
-      totalKillEvents: killEventsArr.length,
+      totalKillEvents: victimEvents.length,
       topCarrasco: topCarrasco ? topCarrasco.weaponNorm : null,
       topCarrascoWeapon: topCarrasco ? topCarrasco.weapon : null,
       topCarrascoPct,
@@ -782,26 +796,51 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
           {aiCoach && (
             <div className="glass panel anim-up" style={{ 
               borderLeft: `4px solid ${aiCoach.color}`,
+              background: 'var(--surface-hi)',
+              boxShadow: 'var(--shadow-glass)',
               animationDelay: '40ms'
             }}>
-              <div className="panel-body" style={{ padding: '24px 28px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <span className="material-symbols-outlined" style={{ color: aiCoach.color }}>{aiCoach.icon}</span>
-                  <span style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: aiCoach.color }}>
-                    {aiCoach.title}
-                  </span>
+              <div className="panel-body" style={{ padding: '20px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 'var(--radius-sm)',
+                      background: `rgba(${aiCoach.color === '#ef4444' ? '239,68,68' : aiCoach.color === '#10b981' ? '16,185,129' : '0,242,255'}, 0.12)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <span className="material-symbols-outlined" style={{ color: aiCoach.color, fontSize: 20 }}>{aiCoach.icon}</span>
+                    </div>
+                    <div>
+                      <div className="label-sm" style={{ color: aiCoach.color, fontWeight: 700, letterSpacing: '0.12em' }}>
+                        Diagnóstico Tático de IA
+                      </div>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-900)', marginTop: 2 }}>
+                        {aiCoach.title}
+                      </div>
+                    </div>
+                  </div>
                   {aiCoach.weaponRaw && (
-                    <div style={{ marginLeft: 'auto' }}>
-                      <WeaponIcon rawWeapon={aiCoach.weaponRaw} size={48} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'rgba(0,0,0,0.03)', borderRadius: 6, border: '1px solid var(--border-lo)' }}>
+                      <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', textTransform: 'uppercase' }}>Item em Foco</span>
+                      <WeaponIcon rawWeapon={aiCoach.weaponRaw} size={36} />
                     </div>
                   )}
                 </div>
-                <p style={{ color: 'var(--text-900)', fontSize: 13, lineHeight: 1.6, fontWeight: 500 }}>
+                <p style={{ color: 'var(--text-700)', fontSize: 13, lineHeight: 1.6, fontWeight: 500 }}>
                   {aiCoach.text}
                 </p>
               </div>
             </div>
           )}
+
+          {/* FASES DE COMBATE INDIVIDUAIS (0-30s, 31-60s, 61-120s, 120s+) */}
+          <div className="anim-up" style={{ animationDelay: '60ms' }}>
+            <BattleTimeline
+              allBattles={profile.playerBattles}
+              killEvents={profile.playerKillEvents}
+              playerName={playerName}
+            />
+          </div>
 
           {/* HISTÓRICO DE ARMAS + RELATIVO DA GUILDA */}
           <div className="glass panel anim-up" style={{ animationDelay: '80ms' }}>

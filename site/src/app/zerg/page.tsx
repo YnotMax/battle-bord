@@ -64,7 +64,7 @@ function ZergHQContent() {
       setLocalWinRate(Math.round((wins / bData.length) * 100))
 
       const battleIds = bData.map(b => b.id)
-      const { data: pData } = await sb.from('player_stats').select('role, weapon').in('battle_id', battleIds)
+      const { data: pData } = await sb.from('player_stats').select('role, weapon').in('battle_id', battleIds).limit(10000)
 
       if (pData) {
         const counts = { tank: 0, support: 0, healer: 0, melee: 0, range: 0 }
@@ -184,17 +184,19 @@ function ZergHQContent() {
               {/* O Gráfico */}
               <div style={{
                 width: 180, height: 180, borderRadius: '50%',
-                background: `conic-gradient(${conicString || '#1e293b 0% 100%'})`,
-                boxShadow: '0 0 40px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.5)',
-                border: '4px solid #0f172a',
+                background: `conic-gradient(${conicString || 'var(--border-lo) 0% 100%'})`,
+                boxShadow: '0 8px 32px rgba(15,23,42,0.10)',
+                border: '4px solid var(--surface-hi)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}>
                 <div style={{ 
-                  width: 110, height: 110, borderRadius: '50%', background: '#0f172a',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column'
+                  width: 110, height: 110, borderRadius: '50%', background: 'var(--surface-hi)',
+                  border: '1px solid var(--border-lo)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
+                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)'
                 }}>
-                  <span style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 24 }}>{total}</span>
-                  <span className="label-sm">Jogadores</span>
+                  <span style={{ color: 'var(--text-900)', fontWeight: 800, fontSize: 24, fontFamily: 'var(--font-mono)' }}>{total}</span>
+                  <span className="label-sm" style={{ color: 'var(--text-400)' }}>Jogadores</span>
                 </div>
               </div>
 

@@ -1,9 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
 } from 'recharts'
 import { WeaponIcon } from './WeaponIcon'
+import { HintIcon } from './HintIcon'
 
 export type KillEventItem = {
   event_id: number
@@ -20,225 +22,396 @@ export type KillEventItem = {
   is_early_death: boolean
 }
 
-type Props = {
-  battleId: string
+type BattleSummary = {
+  id: string
   startTime: string
   opponents: string
   result: string
-  killEvents: KillEventItem[]
 }
 
-// Taxonomia para diagnóstico rápido no frontend
-const BOMB_WEAPONS = [
-  'RIFTGLAIVE', 'GLAIVE', 'HELLFIRE', 'BLOODLETTER',
-  'WAILING_BOW', '2H_FIREBOMBSTAFF', 'MAIN_HALLOWFALL',
-  'MAIN_GLACIALSTAFF', 'SOULSCYTHE', 'CAMLANN', 'GROVEKEEPER'
-]
+type Props = {
+  allBattles: BattleSummary[]
+  killEvents: KillEventItem[]
+  playerName?: string
+}
 
-const ZERG_CLAP_WEAPONS = [
-  '2H_DUALSCIMITAR', 'GALATINE', 'KINGMAKER',
-  '2H_ARCANESTAFF', '2H_FIRESTAFF', '2H_HOLYSTAFF',
-  '2H_CURSEDSTAFF', 'MAIN_SPEAR'
-]
+const GUILD_NAME = 'I M O R T A I S'
 
-export function BattleTimeline({ battleId, startTime, opponents, result, killEvents }: Props) {
-  if (!killEvents || killEvents.length === 0) {
-    return (
-      <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-400)', fontStyle: 'italic' }}>
-        Nenhum evento de morte detalhado gravado para esta batalha ainda. Execute o script <code>Buscar_Kill_Events.bat</code> para importar.
-      </div>
-    )
-  }
+export function BattleTimeline({ allBattles, killEvents, playerName }: Props) {
+  const [selectedBattleId, setSelectedBattleId] = useState<string>('all')
+  const isPlayerMode = !!playerName
 
-  // Ordena por segundos
-  const sortedEvents = [...killEvents].sort((a, b) => (a.seconds_into_battle ?? 0) - (b.seconds_into_battle ?? 0))
-  const maxSeconds = Math.max(...sortedEvents.map(e => e.seconds_into_battle ?? 0), 60)
+  // Filtra eventos pelo escopo selecionado (todas as lutas ou batalha específica)
+  const filteredEvents = selectedBattleId === 'all'
+    ? killEvents
+    : killEvents.filter(e => String(e.battle_id) === selectedBattleId)
 
-  // Agrupa mortes em buckets de 5 segundos e acumula
-  const step = 5
-  const chartData: { second: number; timeLabel: string; deaths: number; cumulative: number; burst: number }[] = []
-  let cumulative = 0
+  // Separa baixas e abates dependendo do modo (Individual vs Guilda)
+  const effectiveDeaths = isPlayerMode
+    ? filteredEvents.filter(e => (e.victim_name || '').trim().toLowerCase() === playerName.toLowerCase())
+    : filteredEvents.filter(e => (e.victim_guild || '').trim().toLowerCase() === GUILD_NAME.toLowerCase() || (!e.victim_guild && !e.killer_guild))
+  
+  const effectiveKills = isPlayerMode
+    ? filteredEvents.filter(e => (e.killer_name || '').trim().toLowerCase() === playerName.toLowerCase())
+    : filteredEvents.filter(e => (e.killer_guild || '').trim().toLowerCase() === GUILD_NAME.toLowerCase())
 
-  for (let s = 0; s <= maxSeconds + step; s += step) {
-    const deathsInBucket = sortedEvents.filter(e => {
-      const sec = e.seconds_into_battle ?? 0
-      return sec >= s && sec < s + step
-    }).length
+  // ─── Agrupamento por 4 Fases Táticas do Albion ZvZ ───────────────────────────
+  // Fase 1: 0s - 30s   (1º Engage / Abertura — Todos com defensivas & poções)
+  // Fase 2: 31s - 60s  (Pós-Choque / Reset — Defensivas principais em Cooldown)
+  // Fase 3: 61s - 120s (2º Choque / Batalha Sustentada — Re-engages e trocas)
+  // Fase 4: > 120s     (Finalização / Clean-up & Sobrevivência tardia)
 
-    cumulative += deathsInBucket
-
-    const mm = Math.floor(s / 60)
-    const ss = String(s % 60).padStart(2, '0')
-
-    chartData.push({
-      second: s,
-      timeLabel: `${mm}:${ss}`,
-      deaths: deathsInBucket,
-      cumulative,
-      burst: deathsInBucket
-    })
-  }
-
-  // Detecta o maior pico de mortes (Clap ou Bomb)
-  let maxBurst = 0
-  let burstSecond = 0
-  chartData.forEach(d => {
-    if (d.burst > maxBurst) {
-      maxBurst = d.burst
-      burstSecond = d.second
+  const phases = [
+    {
+      id: 'p1',
+      name: '0-30s (1º Engage)',
+      short: '0-30s',
+      desc: isPlayerMode ? 'Abertura: defensivas e poções 100% disponíveis' : 'Abertura da luta: todos com poções e defensivas cheias',
+      deaths: effectiveDeaths.filter(e => (e.seconds_into_battle ?? 0) <= 30).length,
+      kills: effectiveKills.filter(e => (e.seconds_into_battle ?? 0) <= 30).length,
+    },
+    {
+      id: 'p2',
+      name: '31-60s (Reset/Cooldown)',
+      short: '31-60s',
+      desc: isPlayerMode ? 'Momento de reset: suas habilidades principais estão em recarga' : 'Momento crítico: defensivas principais estão em cooldown',
+      deaths: effectiveDeaths.filter(e => {
+        const s = e.seconds_into_battle ?? 0
+        return s > 30 && s <= 60
+      }).length,
+      kills: effectiveKills.filter(e => {
+        const s = e.seconds_into_battle ?? 0
+        return s > 30 && s <= 60
+      }).length,
+    },
+    {
+      id: 'p3',
+      name: '61-120s (2º Engage)',
+      short: '61-120s',
+      desc: isPlayerMode ? 'Batalha sustentada: re-engage e reposicionamento' : 'Batalha sustentada: re-engages, heals e reposicionamento',
+      deaths: effectiveDeaths.filter(e => {
+        const s = e.seconds_into_battle ?? 0
+        return s > 60 && s <= 120
+      }).length,
+      kills: effectiveKills.filter(e => {
+        const s = e.seconds_into_battle ?? 0
+        return s > 60 && s <= 120
+      }).length,
+    },
+    {
+      id: 'p4',
+      name: '120s+ (Finalização)',
+      short: '120s+',
+      desc: isPlayerMode ? 'Clean-up final e sobrevivência tardia' : 'Fase tardia: perseguição, clean-up e desgaste total',
+      deaths: effectiveDeaths.filter(e => (e.seconds_into_battle ?? 0) > 120).length,
+      kills: effectiveKills.filter(e => (e.seconds_into_battle ?? 0) > 120).length,
     }
+  ]
+
+  const totalDeathsCount = effectiveDeaths.length
+  const totalKillsCount = effectiveKills.length
+  const earlyDeathsCount = phases[0].deaths
+  const earlyDeathsPct = totalDeathsCount > 0 ? Math.round((earlyDeathsCount / totalDeathsCount) * 100) : 0
+  const resetDeathsCount = phases[1].deaths
+  const resetDeathsPct = totalDeathsCount > 0 ? Math.round((resetDeathsCount / totalDeathsCount) * 100) : 0
+
+  // ─── Diagnóstico Tático Inteligente ─────────────────────────────────────────
+  let tacticalAdvice = isPlayerMode ? {
+    title: 'Engajamento Pessoal Equilibrado',
+    text: 'Seus momentos de abate e sobrevivência estão distribuídos de forma consistente ao longo das fases da ZvZ.',
+    type: 'normal',
+    icon: 'analytics',
+    color: 'var(--cyan)'
+  } : {
+    title: 'Monitoramento de Engajamento Equilibrado',
+    text: 'A distribuição de baixas e abates está dentro dos padrões esperados de ZvZ sustentada.',
+    type: 'normal',
+    icon: 'analytics',
+    color: 'var(--cyan)'
+  }
+
+  if (isPlayerMode) {
+    if (totalDeathsCount >= 2 && earlyDeathsPct >= 40) {
+      tacticalAdvice = {
+        title: '⚠️ Morte Precoce: Cuidado com o 1º Engage (0-30s)',
+        text: `${earlyDeathsPct}% das suas mortes acontecem logo na abertura do combate (0-30s). Nesse momento você ainda tem poções e defensivas cheias — use poção de resistência antes do choque e mantenha-se alinhado à main zerg.`,
+        type: 'danger',
+        icon: 'warning',
+        color: '#ef4444'
+      }
+    } else if (totalDeathsCount >= 2 && resetDeathsPct >= 40) {
+      tacticalAdvice = {
+        title: '⚠️ Vulnerabilidade no Reset (31-60s)',
+        text: `${resetDeathsPct}% das suas mortes ocorrem durante o cooldown defensivo (31-60s). Após a primeira rotação de skills, recue imediatamente e aguarde o chamado do caller.`,
+        type: 'warning',
+        icon: 'hourglass_empty',
+        color: '#f97316'
+      }
+    } else if (phases[0].kills > 0 && phases[0].kills >= phases[3].kills) {
+      tacticalAdvice = {
+        title: '⚡ Abertura Letal: Impacto no 1º Engage',
+        text: `Você é especialmente letal nos primeiros segundos de combate, aproveitando o choque inicial para garantir abates rápidos.`,
+        type: 'success',
+        icon: 'bolt',
+        color: '#10b981'
+      }
+    } else if (phases[3].kills > 0 && phases[3].kills >= phases[0].kills) {
+      tacticalAdvice = {
+        title: '🏹 Finalizador / Clean-up (120s+)',
+        text: `Você tem excelente sobrevivência e garante grande parte dos seus abates na perseguição final e desgaste tardio.`,
+        type: 'success',
+        icon: 'military_tech',
+        color: '#10b981'
+      }
+    }
+  } else {
+    if (totalDeathsCount >= 3) {
+      if (earlyDeathsPct >= 45) {
+        tacticalAdvice = {
+          title: '⚠️ Alerta de Abertura: Baixas Críticas no 1º Choque (0-30s)',
+          text: `${earlyDeathsPct}% de todas as baixas da guilda ocorrem nos primeiros 30 segundos de luta. Nesse momento, todos os operadores têm 100% das poções, defensivas e botas. Isso indica economia de defensivas, falta de foco no caller ou entrada descoordenada no primeiro clap.`,
+          type: 'danger',
+          icon: 'warning',
+          color: '#ef4444'
+        }
+      } else if (resetDeathsPct >= 40) {
+        tacticalAdvice = {
+          title: '⚠️ Alerta de Reset: Baixas no Cooldown Defensivo (31-60s)',
+          text: `${resetDeathsPct}% das baixas ocorrem entre 31s e 60s. A guilda sobrevive ao primeiro clap, mas não recua de forma coordenada durante o cooldown das poções/habilidades. Treine a chamada de "RESET e ESPALHAR" após o primeiro choque.`,
+          type: 'warning',
+          icon: 'hourglass_empty',
+          color: '#f97316'
+        }
+      } else if (phases[0].kills > phases[0].deaths && phases[0].kills >= 3) {
+        tacticalAdvice = {
+          title: '⚡ Abertura Letal: Vantagem no 1º Engage',
+          text: `A guilda tem forte impacto na entrada, conseguindo abater mais alvos na abertura do que sofrer baixas. O ponto de atenção é manter essa vantagem sem se overextender nas fases seguintes.`,
+          type: 'success',
+          icon: 'military_tech',
+          color: '#10b981'
+        }
+      }
+    }
+  }
+
+  // ─── Armas mais fatais no período ───────────────────────────────────────────
+  const weaponFatalMap: Record<string, { count: number; raw: string }> = {}
+  effectiveDeaths.forEach(d => {
+    const norm = d.killer_weapon_norm || 'Desconhecida'
+    if (!weaponFatalMap[norm]) weaponFatalMap[norm] = { count: 0, raw: d.killer_weapon || '' }
+    weaponFatalMap[norm].count++
   })
-
-  // Analisa as armas do pico
-  const peakEvents = sortedEvents.filter(e => {
-    const sec = e.seconds_into_battle ?? 0
-    return sec >= burstSecond - 5 && sec <= burstSecond + 10
-  })
-  const peakWeapons = peakEvents.map(e => (e.killer_weapon_norm || '').toUpperCase())
-  const bombCount = peakWeapons.filter(w => BOMB_WEAPONS.some(b => w.includes(b))).length
-  const clapCount = peakWeapons.filter(w => ZERG_CLAP_WEAPONS.some(z => w.includes(z))).length
-
-  const isMajorClap = maxBurst >= 4
-  const eventType = bombCount > clapCount ? 'BOMB SQUAD' : 'ZERG CLAP'
-  const eventColor = bombCount > clapCount ? '#f97316' : '#ef4444'
-
-  // Estatísticas gerais da luta
-  const earlyDeaths = sortedEvents.filter(e => e.is_early_death).length
-  const earlyPct = Math.round((earlyDeaths / sortedEvents.length) * 100)
+  const topFatalWeapons = Object.entries(weaponFatalMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 4)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Diagnóstico do Engaje */}
-      {isMajorClap && (
-        <div style={{
-          padding: '12px 16px',
-          borderRadius: 'var(--radius-sm)',
-          background: `rgba(${bombCount > clapCount ? '249, 115, 22' : '239, 68, 68'}, 0.08)`,
-          border: `1px solid ${eventColor}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 28, color: eventColor }}>
-            {bombCount > clapCount ? 'explosion' : 'thunderstorm'}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Barra de Controle de Escopo */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-500)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
+            Escopo da Análise:
           </span>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: eventColor, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Pico Crítico Detectado: {eventType} ({maxBurst} mortes em 5s aos {Math.floor(burstSecond/60)}:{String(burstSecond%60).padStart(2,'0')})
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-400)', marginTop: 2 }}>
-              {bombCount > clapCount
-                ? 'Armas de execução/bomb identificadas no choque. O time foi flanqueado por esquadrão rápido.'
-                : 'Armas pesadas de choque frontal identificadas. A Zerg inimiga engajou em clump antes da nossa resposta.'}
-            </div>
-          </div>
+          <select
+            value={selectedBattleId}
+            onChange={e => setSelectedBattleId(e.target.value)}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--surface-hi)',
+              border: '1px solid var(--border-lo)',
+              color: 'var(--text-900)',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              outline: 'none',
+              fontFamily: 'var(--font-display)',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <option value="all">Todas as Batalhas do Período ({killEvents.length} eventos registrados)</option>
+            {allBattles.map(b => (
+              <option key={b.id} value={b.id}>
+                Batalha #{b.id} vs {b.opponents} ({b.result}) — {b.startTime.slice(0, 10)}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
 
-      {/* Mini KPIs de Tempo de Morte */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-        <div className="glass" style={{ padding: '10px 12px' }}>
-          <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', textTransform: 'uppercase' }}>Total de Baixas</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#ef4444' }}>{sortedEvents.length}</div>
-        </div>
-        <div className="glass" style={{ padding: '10px 12px' }}>
-          <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', textTransform: 'uppercase' }}>Mortes Precoces (&le;60s)</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: earlyPct >= 30 ? '#ef4444' : '#10b981' }}>
-            {earlyDeaths} <span style={{ fontSize: 11, fontWeight: 600 }}>({earlyPct}%)</span>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div className="badge badge-loss" style={{ fontSize: 10, padding: '3px 8px' }}>
+            Baixas Analisadas: {totalDeathsCount}
           </div>
+          {totalKillsCount > 0 && (
+            <div className="badge badge-win" style={{ fontSize: 10, padding: '3px 8px' }}>
+              Abates Feitos: {totalKillsCount}
+            </div>
+          )}
         </div>
-        <div className="glass" style={{ padding: '10px 12px' }}>
-          <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', textTransform: 'uppercase' }}>Momento do Maior Wipe</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-900)' }}>
-            {Math.floor(burstSecond/60)}:{String(burstSecond%60).padStart(2,'0')}
+      </div>
+
+      {/* Card de Diagnóstico do Coach de Guilda */}
+      <div style={{
+        padding: '16px 20px',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--surface-hi)',
+        border: '1px solid var(--border-lo)',
+        borderLeft: `4px solid ${tacticalAdvice.color}`,
+        boxShadow: 'var(--shadow-sm)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 14
+      }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: tacticalAdvice.color, marginTop: 2 }}>
+          {tacticalAdvice.icon}
+        </span>
+        <div style={{ flexGrow: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: tacticalAdvice.color, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            {tacticalAdvice.title}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-700)', marginTop: 4, lineHeight: 1.5, fontWeight: 500 }}>
+            {tacticalAdvice.text}
           </div>
         </div>
       </div>
 
-      {/* Gráfico da Linha do Tempo */}
-      <div style={{ height: 220, width: '100%', marginTop: 8 }}>
-        <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', marginBottom: 6, textTransform: 'uppercase' }}>
-          Curva Cumulativa de Baixas da Guilda (Tempo de Luta)
-        </div>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData}>
-            <defs>
-              <linearGradient id="deathGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="timeLabel" stroke="var(--text-400)" fontSize={10} />
-            <YAxis stroke="var(--text-400)" fontSize={10} />
-            <Tooltip
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  const data = payload[0].payload
-                  return (
-                    <div style={{ background: '#0f172a', border: '1px solid var(--border)', padding: '6px 10px', borderRadius: 4, fontSize: 11 }}>
-                      <div style={{ color: 'var(--text-400)' }}>Tempo: {data.timeLabel}</div>
-                      <div style={{ color: '#ef4444', fontWeight: 700 }}>Total acumulado: {data.cumulative} mortes</div>
-                      {data.burst > 0 && <div style={{ color: '#f97316' }}>Neste intervalo: +{data.burst}</div>}
-                    </div>
-                  )
-                }
-                return null
-              }}
-            />
-            {isMajorClap && (
-              <ReferenceLine x={`${Math.floor(burstSecond/60)}:${String(burstSecond%60).padStart(2,'0')}`} stroke={eventColor} strokeDasharray="3 3" />
-            )}
-            <Area type="monotone" dataKey="cumulative" stroke="#ef4444" strokeWidth={2} fill="url(#deathGradient)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Grid Principal: Gráfico de Fases de Combate + KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 16 }}>
+        {/* Gráfico de Barras Comparativo */}
+        <div className="glass" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="section-hd" style={{ fontSize: 12, color: 'var(--text-900)' }}>
+                {isPlayerMode ? 'Fases de Combate: Em que momento você morre vs mata?' : 'Fases de Combate: Em que momento a guilda morre vs mata?'}
+              </span>
+              <HintIcon text={isPlayerMode ? "Compara suas mortes sofridas (vermelho) contra abates realizados por você (verde) em cada fase do combate ZvZ." : "Compara o volume de mortes sofridas (vermelho) contra abates realizados (verde) em cada fase do combate ZvZ."} />
+            </div>
+          </div>
 
-      {/* Log de Abates Recentes com Arma do Killer */}
-      <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', textTransform: 'uppercase', marginBottom: 6 }}>
-          Registro Cronológico de Abates ({sortedEvents.length})
+          <div style={{ height: 220, width: '100%' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={phases} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(203,213,225,0.2)" />
+                <XAxis dataKey="short" stroke="var(--text-400)" fontSize={11} fontWeight={700} />
+                <YAxis stroke="var(--text-400)" fontSize={10} />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload
+                      return (
+                        <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)', padding: '10px 14px', borderRadius: 6, fontSize: 11, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
+                          <div style={{ fontWeight: 800, color: '#f8fafc', marginBottom: 4, fontSize: 12 }}>{data.name}</div>
+                          <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 8 }}>{data.desc}</div>
+                          <div style={{ color: '#ff4d4d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>💀 {isPlayerMode ? 'Suas Mortes' : 'Baixas da Guilda'}:</span> <strong>{data.deaths}</strong>
+                          </div>
+                          <div style={{ color: '#00ff9d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                            <span>⚔️ {isPlayerMode ? 'Seus Abates' : 'Abates Realizados'}:</span> <strong>{data.kills}</strong>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return null
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: 11, fontWeight: 700, paddingTop: 6 }}
+                  formatter={value => (value === 'deaths' ? (isPlayerMode ? 'Suas Mortes' : 'Baixas da Guilda (Mortes)') : (isPlayerMode ? 'Seus Abates' : 'Abates Feitos (Kills)'))}
+                />
+                <Bar dataKey="deaths" fill="#ff4d4d" radius={[4, 4, 0, 0]} name="deaths" />
+                <Bar dataKey="kills" fill="#00ff9d" radius={[4, 4, 0, 0]} name="kills" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="scroll" style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {sortedEvents.map((e, idx) => {
-            const sec = e.seconds_into_battle ?? 0
-            const mm = Math.floor(sec / 60)
-            const ss = String(sec % 60).padStart(2, '0')
+
+        {/* Painel Tático das 4 Fases com Indicadores de Eficiência */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {phases.map((p) => {
+            const pct = totalDeathsCount > 0 ? Math.round((p.deaths / totalDeathsCount) * 100) : 0
+            const isDanger = pct >= 40 && totalDeathsCount >= 2
             return (
               <div
-                key={e.event_id || idx}
+                key={p.id}
+                className="glass"
                 style={{
+                  padding: '12px 16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '6px 10px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: e.is_early_death ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255, 255, 255, 0.02)',
-                  border: e.is_early_death ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid var(--border)',
-                  fontSize: 11
+                  borderLeft: isDanger ? '3px solid #ff4d4d' : '3px solid var(--border-lo)',
+                  background: isDanger ? 'rgba(255, 77, 77, 0.04)' : 'var(--surface)'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: e.is_early_death ? '#ef4444' : 'var(--text-400)', fontWeight: 700 }}>
-                    {mm}:{ss}
-                  </span>
-                  <span style={{ fontWeight: 700, color: 'var(--text-900)' }}>{e.victim_name}</span>
-                  {e.is_early_death && (
-                    <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 2, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontWeight: 700 }}>
-                      PRECOCE
-                    </span>
-                  )}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-900)' }}>{p.name}</span>
+                    {isDanger && (
+                      <span className="badge badge-loss" style={{ fontSize: 8, padding: '1px 5px' }}>
+                        PICO DE BAIXAS
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-400)', marginTop: 2 }}>{p.desc}</div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: 'var(--text-400)', fontSize: 10 }}>abatido por</span>
-                  <span style={{ fontWeight: 600, color: 'var(--text-700)' }}>{e.killer_name || 'Desconhecido'}</span>
-                  {e.killer_weapon && <WeaponIcon weapon={e.killer_weapon} size={18} />}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: isDanger ? '#dc2626' : 'var(--text-900)' }}>
+                    {p.deaths} mortes <span style={{ fontSize: 11, color: 'var(--text-400)' }}>({pct}%)</span>
+                  </div>
+                  {p.kills > 0 && (
+                    <div style={{ fontSize: 10, color: '#059669', fontWeight: 700 }}>
+                      +{p.kills} abates
+                    </div>
+                  )}
                 </div>
               </div>
             )
           })}
         </div>
       </div>
+
+      {/* Armas Inimigas Mais Fatais no Período */}
+      {topFatalWeapons.length > 0 && (
+        <div className="glass" style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#ff4d4d' }}>gavel</span>
+            <span className="section-hd" style={{ fontSize: 11, color: 'var(--text-700)' }}>
+              {isPlayerMode ? 'Top Armas Inimigas que Mais Te Abateram' : 'Top Armas Inimigas que Mais Abateram Nossos Jogadores no Período'}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {topFatalWeapons.map(([norm, data]) => {
+              const weaponFormatted = norm.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+              const pct = totalDeathsCount > 0 ? Math.round((data.count / totalDeathsCount) * 100) : 0
+              return (
+                <div
+                  key={norm}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 14px',
+                    background: 'var(--surface-hi)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-lo)',
+                    boxShadow: 'var(--shadow-sm)'
+                  }}
+                >
+                  <WeaponIcon rawWeapon={data.raw} size={36} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-900)' }}>{weaponFormatted}</div>
+                    <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 700, marginTop: 2 }}>
+                      {data.count} baixas ({pct}%)
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

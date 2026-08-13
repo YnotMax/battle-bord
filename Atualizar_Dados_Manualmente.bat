@@ -27,8 +27,14 @@ echo.
 :: Navega magicamente para a pasta exata onde esse script (.bat) esta
 cd /d "%~dp0"
 
-:: Executa o seu arquivo Python (o seu PC ja sabe encontrar o Python)
+:: 1. Executa o crawler de batalhas (AlbionBB)
+echo [1/2] Sincronizando novas batalhas e participantes (AlbionBB)...
 python scripts\crawler.py
+
+echo.
+:: 2. Executa o crawler de eventos detalhados de morte (Albion Gameinfo)
+echo [2/2] Sincronizando eventos de kill e momento de mortes (Albion API)...
+python scripts\crawler_kills.py
 
 echo.
 echo ========================================================

@@ -17,9 +17,13 @@ def fetch_deep_history(pages_to_scan=15):
     print(f"Coletando dados em massa de até {pages_to_scan} páginas de histórico do AlbionBB...\n")
     
     for page in range(1, pages_to_scan + 1):
-        print(f"\n>>>> ESCAVANDO PÁGINA {page} DE {pages_to_scan} <<<<")
-        url = f"https://api.albionbb.com/us/battles?guildId={GUILD_ID}&minPlayers=21&page={page}"  # Mínimo de 21 jogadores
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        url = f"https://api.albionbb.com/us/battles?guildId={GUILD_ID}&minPlayers=21&page={page}"
+        try:
+            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=12)
+        except Exception as ex:
+            print(f"[ERRO] Timeout/Falha de conexao na pagina {page}: {ex}")
+            time.sleep(2)
+            continue
         
         if response.status_code != 200:
             print(f"[ERRO] Falha na página {page} (Status: {response.status_code})")

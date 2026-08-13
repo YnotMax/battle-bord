@@ -18,7 +18,7 @@ async function getAttendanceData() {
   const recentBattles = allBattles ? allBattles.slice(0, 10).reverse() : [] // Last 10 from oldest to newest
 
   // get player stats mapped
-  const { data: stats } = await sb.from('player_stats').select('player_name, role, battle_id')
+  const { data: stats } = await sb.from('player_stats').select('player_name, role, battle_id').limit(10000)
   
   if (!stats) return { totalBattles: 0, players: [] }
 
@@ -143,11 +143,12 @@ export default async function PresencePage() {
                           {p.sparkline.map((attended, sid) => (
                             <div 
                               key={sid} 
-                              data-tooltip={attended ? "Presente" : "Faltou"}
+                              data-tooltip={attended ? "Presente nesta CTA" : "Ausente"}
                               style={{
                                 width: 8, height: 16, borderRadius: 2,
-                                backgroundColor: attended ? 'var(--cyan)' : 'rgba(255,255,255,0.05)',
-                                opacity: attended ? 1 : 0.6
+                                backgroundColor: attended ? 'var(--emerald)' : 'rgba(148, 163, 184, 0.25)',
+                                border: attended ? '1px solid rgba(0,255,157,0.4)' : '1px solid transparent',
+                                boxShadow: attended ? '0 0 6px rgba(0,255,157,0.3)' : 'none'
                               }} 
                             />
                           ))}
@@ -161,14 +162,14 @@ export default async function PresencePage() {
                           }}>
                             {p.attendancePercent}%
                           </span>
-                          <div className="bar-track" style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.4)', borderRadius: 2 }}>
+                          <div className="bar-track" style={{ flex: 1, backgroundColor: 'rgba(203,213,225,0.35)', height: 6, borderRadius: 3 }}>
                             <div 
                               className="bar-fill" 
                               style={{ 
                                 width: `${p.attendancePercent}%`, 
                                 background: barColor,
                                 height: 6,
-                                borderRadius: 2
+                                borderRadius: 3
                               }} 
                             />
                           </div>

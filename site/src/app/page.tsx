@@ -55,6 +55,7 @@ type AggPlayer = {
 async function getPlayerAgg(start?: string, end?: string): Promise<AggPlayer[]> {
   let q = sb.from('player_stats')
     .select('player_name, role, damage_done, healing_done, kills, deaths, battles!inner(start_time)')
+    .limit(10000)
     
   if (start) q = q.gte('battles.start_time', start)
   if (end) {

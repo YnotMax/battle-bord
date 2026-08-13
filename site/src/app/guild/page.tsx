@@ -56,25 +56,25 @@ async function getMentorshipData(days: number) {
   }
 
   const [bRes, pRes] = await Promise.all([
-    qBattles,
-    sb.from('player_stats').select('battle_id, player_name, weapon, role, kills, deaths, healing_done, damage_done')
+    qBattles.limit(1000),
+    sb.from('player_stats').select('battle_id, player_name, weapon, role, kills, deaths, healing_done, damage_done').limit(10000)
   ])
 
   if (!bRes.data || !pRes.data) return null;
   const battles = bRes.data as BattleRecord[]
   const pStats = pRes.data as (PlayerStat & { damage_done: number })[]
 
-  // V2: Busca kill events da batalha mais recente
-  const latestBattle = battles[0] || null
-  let latestKillEvents: any[] = []
-  if (latestBattle) {
+  // V2: Busca kill events de todas as batalhas do período
+  let allKillEvents: any[] = []
+  const battleIds = battles.map(b => b.id)
+  if (battleIds.length > 0) {
     const { data: kEvents } = await sb
       .from('kill_events')
       .select('*')
-      .eq('battle_id', latestBattle.id)
-      .order('timestamp', { ascending: true })
+      .in('battle_id', battleIds)
+      .order('seconds_into_battle', { ascending: true })
     if (kEvents) {
-      latestKillEvents = kEvents
+      allKillEvents = kEvents
     }
   }
 
@@ -94,10 +94,9 @@ async function getMentorshipData(days: number) {
       if (!matchups[opp]) matchups[opp] = { guild: opp, fights: 0, wins: 0, losses: 0, fameStolen: 0, streak: [] }
       
       matchups[opp].fights += 1
-      matchups[opp].streak.push(b.result) // mais recente primeiro (a query vem desc)
+      matchups[opp].streak.push(b.result)
       if (b.result === 'WIN') {
         matchups[opp].wins += 1
-        // Soma o fame dessa batalha como "fame roubado" dos inimigos
         matchups[opp].fameStolen += (b.total_fame || 0)
       } else {
         matchups[opp].losses += 1
@@ -114,8 +113,8 @@ async function getMentorshipData(days: number) {
   // ============================================
   const wStats: Record<string, { 
     weapon: string, rawWeapon: string,
-    roleCounts: Record<string, number>, // contagem por role para pegar o dominante
-    role: string, // role mais frequente
+    roleCounts: Record<string, number>,
+    role: string,
     uses: number, wins: number,
     kills: number, deaths: number, healing: number, damage: number 
   }> = {}
@@ -133,39 +132,60 @@ async function getMentorshipData(days: number) {
 
     // Processa Armas
     const wRaw = p.weapon || "Desconhecida"
-    const w = formatWeaponName(wRaw) 
-
-    if (!wStats[w]) wStats[w] = { weapon: w, rawWeapon: wRaw, roleCounts: {}, role: p.role, uses: 0, wins: 0, kills: 0, deaths: 0, healing: 0, damage: 0 }
+    const wName = formatWeaponName(wRaw)
     
-    // Acumula o role para pegar o mais frequente depois
-    const pRoleLc = (p.role || 'dps').toLowerCase()
-    wStats[w].roleCounts[pRoleLc] = (wStats[w].roleCounts[pRoleLc] || 0) + 1
+    if (!wStats[wName]) {
+      wStats[wName] = { 
+        weapon: wName, rawWeapon: wRaw,
+        roleCounts: {},
+        role: 'dps',
+        uses: 0, wins: 0, kills: 0, deaths: 0, healing: 0, damage: 0 
+      }
+    }
     
-    wStats[w].uses += 1
-    wStats[w].kills += p.kills
-    wStats[w].deaths += p.deaths
-    wStats[w].healing += p.healing_done
-    wStats[w].damage += p.damage_done || 0
+    const r = p.role || 'dps'
+    wStats[wName].roleCounts[r] = (wStats[wName].roleCounts[r] || 0) + 1
+    wStats[wName].uses += 1
+    wStats[wName].kills += (p.kills || 0)
+    wStats[wName].deaths += (p.deaths || 0)
+    wStats[wName].healing += (p.healing_done || 0)
+    wStats[wName].damage += (p.damage_done || 0)
     
-    const parentBattle = battles.find(btl => btl.id === p.battle_id)
-    if (parentBattle?.result === 'WIN') wStats[w].wins += 1
-
     // Processa Players
-    const plName = p.player_name || "Membro Oculto"
-    if (!pLeaderboard[plName]) pLeaderboard[plName] = { name: plName, fights: 0, kills: 0, deaths: 0, healing: 0, assist: 0, damage: 0 }
-    
-    pLeaderboard[plName].fights += 1
-    pLeaderboard[plName].kills += p.kills
-    pLeaderboard[plName].deaths += p.deaths
-    pLeaderboard[plName].healing += p.healing_done
-    pLeaderboard[plName].damage += p.damage_done || 0
+    if (!pLeaderboard[p.player_name]) {
+      pLeaderboard[p.player_name] = { name: p.player_name, fights: 0, kills: 0, deaths: 0, healing: 0, assist: 0, damage: 0 }
+    }
+    pLeaderboard[p.player_name].fights += 1
+    pLeaderboard[p.player_name].kills += (p.kills || 0)
+    pLeaderboard[p.player_name].deaths += (p.deaths || 0)
+    pLeaderboard[p.player_name].healing += (p.healing_done || 0)
+    pLeaderboard[p.player_name].damage += (p.damage_done || 0)
   })
 
-  // Resolve o role dominante de cada arma após o loop
-  const wArray = Object.values(wStats).map(ws => ({
-    ...ws,
-    role: Object.entries(ws.roleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || ws.role
-  }))
+  // Atribui o role dominante para cada arma
+  Object.values(wStats).forEach(w => {
+    let topRole = 'dps'
+    let maxCount = 0
+    Object.entries(w.roleCounts).forEach(([role, count]) => {
+      if (count > maxCount) {
+        maxCount = count
+        topRole = role
+      }
+    })
+    w.role = topRole
+  })
+
+  // Computa Vitórias por Arma (baseado no resultado da batalha)
+  battles.forEach(b => {
+    if (b.result !== 'WIN') return;
+    const battlePlayers = pStats.filter(p => p.battle_id === b.id)
+    const usedWeaponsInWin = new Set(battlePlayers.map(p => formatWeaponName(p.weapon)))
+    usedWeaponsInWin.forEach(wName => {
+      if (wStats[wName]) wStats[wName].wins += 1
+    })
+  })
+
+  const wArray = Object.values(wStats)
   const plArray = Object.values(pLeaderboard)
 
   // Rank Armas
@@ -191,7 +211,6 @@ async function getMentorshipData(days: number) {
     const r = w.role.toLowerCase()
     const isTankOrSupp = r.includes('tank') || r.includes('support')
     if (isTankOrSupp) return false
-    // Threshold dinâmico: mínimo de 5 usos OU 30% das batalhas (o que for maior)
     const threshold = Math.max(5, battles.length * 0.3)
     return w.uses >= threshold && (w.wins / w.uses) < 0.40
   })
@@ -201,13 +220,13 @@ async function getMentorshipData(days: number) {
     rivalry: rivalryArray,
     weapons: { killers: topKillers, damage: topDamage, healers: topHealers, safest: safestWeapons, offmeta: offMetaSecretas, topPicked, bottomPicked, warnings: warningWeapons.sort((a,b) => (a.wins/a.uses) - (b.wins/b.uses)) },
     players: { killers: topPlayerKillers, damage: topPlayerDamage, healers: topPlayerHealers, safest: safestPlayers },
-    latestBattle: latestBattle ? {
-      id: String(latestBattle.id),
-      startTime: latestBattle.start_time,
-      opponents: latestBattle.opponents,
-      result: latestBattle.result,
-      killEvents: latestKillEvents
-    } : null
+    allBattles: battles.map(b => ({
+      id: String(b.id),
+      startTime: b.start_time,
+      opponents: b.opponents,
+      result: b.result
+    })),
+    killEvents: allKillEvents
   }
 }
 
@@ -218,7 +237,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
 
   if (!data) return <div style={{ padding: 40, textAlign: 'center' }}>Coletando dados da balança cósmica...</div>
 
-  const { rivalry, weapons, players, battlesAnalyzed, latestBattle } = data
+  const { rivalry, weapons, players, battlesAnalyzed, allBattles, killEvents } = data
 
   return (
     <>
@@ -247,40 +266,27 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
       </div>
 
       {/* ==============================================
-          SESSÃO TÁTICA: LINHA DO TEMPO & ANÁLISE DE ENGAGE (V2)
+          SESSÃO TÁTICA: FASES DE COMBATE & DEFENSIVAS (MACRO + MICRO)
          ============================================== */}
-      {latestBattle && (
-        <div className="glass panel anim-up" style={{ marginBottom: 24, borderTop: '3px solid var(--cyan)' }}>
-          <div className="panel-header" style={{ padding: '14px 20px', borderBottomColor: 'rgba(0, 242, 255, 0.15)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="material-symbols-outlined" style={{ color: 'var(--cyan)', fontSize: 22 }}>timeline</span>
-                <span className="section-hd" style={{ fontSize: 16, color: 'var(--text-900)' }}>
-                  Linha do Tempo Tática — Confronto Recente vs {latestBattle.opponents}
-                </span>
-                <HintIcon text="Mapeamento cronológico das baixas da guilda. Detecta se o time tomou um Bomb Squad ou um Clap frontal nos primeiros segundos." />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 10, color: 'var(--text-400)', fontFamily: 'var(--font-mono)' }}>
-                  ID #{latestBattle.id}
-                </span>
-                <span className={`badge badge-${latestBattle.result.toLowerCase()}`}>
-                  {latestBattle.result}
-                </span>
-              </div>
+      <div className="glass panel anim-up" style={{ marginBottom: 24, borderTop: '3px solid var(--cyan)' }}>
+        <div className="panel-header" style={{ padding: '14px 20px', borderBottomColor: 'rgba(0, 242, 255, 0.15)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="material-symbols-outlined" style={{ color: 'var(--cyan)', fontSize: 22 }}>shield</span>
+              <span className="section-hd" style={{ fontSize: 16, color: 'var(--text-900)' }}>
+                Inteligência de Combate: Fases de Luta & Uso de Defensivas
+              </span>
+              <HintIcon text="Mapeia segundo a segundo quando a guilda morre vs quando ela mata ao longo de todas as batalhas. Revela se o time falha no 1º engage (com defensivas cheias) ou no cooldown do reset." />
             </div>
           </div>
-          <div className="panel-body" style={{ padding: 20 }}>
-            <BattleTimeline
-              battleId={latestBattle.id}
-              startTime={latestBattle.startTime}
-              opponents={latestBattle.opponents}
-              result={latestBattle.result}
-              killEvents={latestBattle.killEvents}
-            />
-          </div>
         </div>
-      )}
+        <div className="panel-body" style={{ padding: 20 }}>
+          <BattleTimeline
+            allBattles={allBattles}
+            killEvents={killEvents}
+          />
+        </div>
+      </div>
 
       <div style={{
         display: 'grid',

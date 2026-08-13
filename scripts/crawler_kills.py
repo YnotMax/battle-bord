@@ -88,68 +88,62 @@ def classificar_tipo_morte(killer_weapons: list) -> str:
 
 def fetch_kill_events_for_battle(battle_id: int, battle_start: str) -> list:
     """
-    Pagina pela API de eventos e retorna todos os kills da batalha especificada.
-    A API não filtra por battleId — filtramos do lado do cliente.
+    Pagina pela API de eventos (max 4 páginas / ~200 eventos mais recentes).
+    Filtra eventos onde nossa guilda foi vítima OU assassina.
     """
     events = []
     offset = 0
     start_dt = datetime.fromisoformat(battle_start.replace('Z', '+00:00'))
-    consecutive_empty = 0
+    max_pages = 4
 
-    print(f"  Buscando kill events (API Albion) para batalha {battle_id}...")
+    print(f"  Buscando kill events recentes na API do Albion para batalha {battle_id}...")
 
-    while True:
+    for page in range(max_pages):
         try:
             url = f"{ALBION_EVENTS}?limit=51&offset={offset}"
-            r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
+            r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
 
             if r.status_code != 200:
-                print(f"  API retornou {r.status_code}. Parando.")
+                print(f"  API Albion retornou status {r.status_code}. Pulando busca de eventos.")
                 break
 
             batch = r.json()
-            if not batch:
+            if not batch or not isinstance(batch, list):
                 break
 
             # Filtrar kills desta batalha específica
             battle_events = [e for e in batch if e.get('BattleId') == battle_id]
             events.extend(battle_events)
 
-            if battle_events:
-                consecutive_empty = 0
-            else:
-                consecutive_empty += 1
-
-            # Para de paginar se chegamos a eventos anteriores ao início da batalha
+            # Se chegamos a eventos anteriores ao início da batalha, parar
             last_ts = batch[-1].get('TimeStamp', '')
             if last_ts:
-                last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
-                if last_dt < start_dt:
-                    break
-
-            # Para se 3 páginas seguidas sem nenhum evento desta batalha
-            if consecutive_empty >= 3 and offset > 100:
-                break
+                try:
+                    last_dt = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
+                    if last_dt < start_dt:
+                        break
+                except:
+                    pass
 
             if len(batch) < 51:
                 break
 
             offset += 51
-            time.sleep(REQUEST_DELAY)
+            time.sleep(1.0)
 
         except requests.exceptions.Timeout:
-            print(f"  Timeout na API. Tentando novamente em 5s...")
-            time.sleep(5)
+            print(f"  Timeout de 8s na API do Albion. Continuando...")
+            break
         except Exception as ex:
-            print(f"  Erro ao buscar eventos: {ex}")
+            print(f"  Aviso: {ex}")
             break
 
-    print(f"  Encontrados {len(events)} kill events para a guilda.")
+    print(f"  Encontrados {len(events)} kill events vinculados a batalha {battle_id}.")
     return events
 
 
 def save_kill_events(battle_id: int, battle_start: str, events: list):
-    """Processa e salva os kill events de mortes da nossa guilda no banco."""
+    """Processa e salva os kill events (tanto baixas quanto abates da guilda) no banco."""
     start_dt = datetime.fromisoformat(battle_start.replace('Z', '+00:00'))
     rows = []
 
@@ -157,8 +151,11 @@ def save_kill_events(battle_id: int, battle_start: str, events: list):
         victim = e.get('Victim', {}) or {}
         killer = e.get('Killer', {}) or {}
 
-        # Só salvamos quando um jogador da IMORTAIS morreu
-        if victim.get('GuildName', '').strip() != GUILD_NAME:
+        is_victim = victim.get('GuildName', '').strip().lower() == GUILD_NAME.lower()
+        is_killer = killer.get('GuildName', '').strip().lower() == GUILD_NAME.lower()
+
+        # Só salvamos se a IMORTAIS for vítima OU killer
+        if not (is_victim or is_killer):
             continue
 
         ts_str = e.get('TimeStamp', '')
@@ -191,61 +188,55 @@ def save_kill_events(battle_id: int, battle_start: str, events: list):
         })
 
     if not rows:
-        print(f"  Nenhuma morte da {GUILD_NAME} encontrada nesta batalha.")
+        print(f"  Nenhum evento relevante da {GUILD_NAME} encontrado nesta batalha.")
         return
 
     try:
-        supabase.table("kill_events").insert(rows).execute()
-        early = sum(1 for r in rows if r['is_early_death'])
-        print(f"  [OK] Salvos {len(rows)} kill events ({early} mortes precoces <=60s).")
+        supabase.table("kill_events").upsert(rows).execute()
+        early = sum(1 for r in rows if r['is_early_death'] and r['victim_guild'].lower() == GUILD_NAME.lower())
+        kills = sum(1 for r in rows if r['killer_guild'].lower() == GUILD_NAME.lower())
+        deaths = sum(1 for r in rows if r['victim_guild'].lower() == GUILD_NAME.lower())
+        print(f"  [OK] Salvos {len(rows)} eventos ({kills} abates, {deaths} baixas, {early} mortes precoces <=60s).")
     except Exception as ex:
         print(f"  [ERRO] Erro ao salvar: {ex}")
 
 
-def processar_batalhas_pendentes(limite: int = 20):
+def processar_batalhas_pendentes(limite: int = 5):
     """
-    Busca as batalhas mais recentes do banco e processa as que ainda
-    não têm kill events salvos.
+    Busca apenas as 5 batalhas mais recentes no banco (já que a API do Albion
+    só armazena eventos de poucas horas atrás).
     """
-    print("Buscando batalhas no banco...")
-    battles = (
-        supabase.table("battles")
-        .select("id, start_time")
-        .order("start_time", desc=True)
-        .limit(limite)
-        .execute()
-    )
+    print("Buscando batalhas recentes no banco para sincronizar eventos de combate...")
+    try:
+        battles = (
+            supabase.table("battles")
+            .select("id, start_time")
+            .order("start_time", desc=True)
+            .limit(limite)
+            .execute()
+        )
+    except Exception as e:
+        print(f"Erro ao consultar battles no Supabase: {e}")
+        return
 
     if not battles.data:
-        print("Nenhuma batalha encontrada no banco.")
+        print("Nenhuma batalha recente encontrada no banco.")
         return
 
     for b in battles.data:
         battle_id    = b['id']
         battle_start = b['start_time']
 
-        # Verifica se já tem kill events
-        check = (
-            supabase.table("kill_events")
-            .select("event_id")
-            .eq("battle_id", battle_id)
-            .limit(1)
-            .execute()
-        )
-        if check.data:
-            print(f"Batalha {battle_id}: ja processada. Pulando.")
-            continue
-
-        print(f"\n> Processando batalha {battle_id} ({battle_start[:16]})...")
+        print(f"\n> Verificando batalha {battle_id} ({battle_start[:16]})...")
         events = fetch_kill_events_for_battle(battle_id, battle_start)
 
         if events:
             save_kill_events(battle_id, battle_start, events)
+        else:
+            print(f"  (Eventos desta batalha ja expiraram do buffer da API do Albion)")
 
-        time.sleep(REQUEST_DELAY)
-
-    print("\n[OK] Processamento concluido.")
+    print("\n[OK] Sincronizacao de Kill Events concluida.")
 
 
 if __name__ == "__main__":
-    processar_batalhas_pendentes(limite=20)
+    processar_batalhas_pendentes(limite=5)

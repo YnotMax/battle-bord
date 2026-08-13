@@ -26,16 +26,22 @@ GUILD_NAME = "I M O R T A I S"
 GUILD_ID = "YNRMcsuVSRWTBs0y4mZ-SQ"
 
 def fetch_recent_battles():
-    print(f"Buscando as últimas batalhas da guilda {GUILD_NAME} no AlbionBB...")
-    url = f"https://api.albionbb.com/us/battles?guildId={GUILD_ID}&minPlayers=21&page=1"  # Mínimo de 21 jogadores
-    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    
-    if response.status_code != 200:
-        print("Falha ao consultar AlbionBB", response.status_code)
+    print(f"Buscando as ultimas batalhas da guilda {GUILD_NAME} no AlbionBB...")
+    url = f"https://api.albionbb.com/us/battles?guildId={GUILD_ID}&minPlayers=21&page=1"  # Mínimo de 21 jogadores (ZvZ Larga Escala)
+    try:
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=12)
+        if response.status_code != 200:
+            print("Falha ao consultar AlbionBB", response.status_code)
+            return
+        data = response.json()
+    except Exception as e:
+        print(f"Erro ao conectar com AlbionBB: {e}")
         return
-
-    data = response.json()
+    
     battles = data if isinstance(data, list) else data.get("data", [])
+    if not battles:
+        print("Nenhuma batalha encontrada na pagina 1.")
+        return
     
     for b in battles:
         battle_id = b.get("albionId") or b.get("id")
@@ -43,11 +49,12 @@ def fetch_recent_battles():
         # Verifica se já salvamos essa batalha no banco para não duplicar
         check = supabase.table("battles").select("id").eq("id", battle_id).execute()
         if len(check.data) > 0:
-            print(f"Batalha {battle_id} já mapeada. Pulando...")
+            print(f"Batalha {battle_id} ja mapeada. Pulando...")
             continue
             
         print(f"Nova Batalha encontrada: {battle_id}. Processando dados densos...")
         process_battle_details(battle_id)
+        time.sleep(1.5) # Pausa estratégica para não sobrecarregar a API do AlbionBB
 
 # Guildas que jogam na nossa ALIANÇA (não são inimigas)
 # Serve de fallback caso o campo "alliance" venha vazio na API
@@ -58,12 +65,15 @@ ALLIED_GUILDS = [
 
 def process_battle_details(battle_id):
     url = f"https://api.albionbb.com/us/battles/{battle_id}"
-    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    
-    if response.status_code != 200:
+    try:
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=12)
+        if response.status_code != 200:
+            print(f"Erro HTTP {response.status_code} ao buscar detalhes da batalha {battle_id}")
+            return
+        data = response.json()
+    except Exception as e:
+        print(f"Timeout/Erro ao buscar detalhes da batalha {battle_id}: {e}")
         return
-        
-    data = response.json()
     
     # 1. Determinar quem era o inimigo e o status (WIN/LOSS) simulado
     guilds = data.get("guilds", [])
