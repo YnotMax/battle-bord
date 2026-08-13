@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { DateFilter } from '../../components/DateFilter'
 import { WeaponIcon } from '@/components/WeaponIcon'
+import { HintIcon } from '@/components/HintIcon'
+import { BattleTimeline } from '@/components/BattleTimeline'
 
 export const revalidate = 0
 
@@ -61,6 +63,20 @@ async function getMentorshipData(days: number) {
   if (!bRes.data || !pRes.data) return null;
   const battles = bRes.data as BattleRecord[]
   const pStats = pRes.data as (PlayerStat & { damage_done: number })[]
+
+  // V2: Busca kill events da batalha mais recente
+  const latestBattle = battles[0] || null
+  let latestKillEvents: any[] = []
+  if (latestBattle) {
+    const { data: kEvents } = await sb
+      .from('kill_events')
+      .select('*')
+      .eq('battle_id', latestBattle.id)
+      .order('timestamp', { ascending: true })
+    if (kEvents) {
+      latestKillEvents = kEvents
+    }
+  }
 
   // ============================================
   // 1. RIVALIDADES E MATCHUPS (GUILDAS OPOSTAS)
@@ -184,7 +200,14 @@ async function getMentorshipData(days: number) {
     battlesAnalyzed: battles.length,
     rivalry: rivalryArray,
     weapons: { killers: topKillers, damage: topDamage, healers: topHealers, safest: safestWeapons, offmeta: offMetaSecretas, topPicked, bottomPicked, warnings: warningWeapons.sort((a,b) => (a.wins/a.uses) - (b.wins/b.uses)) },
-    players: { killers: topPlayerKillers, damage: topPlayerDamage, healers: topPlayerHealers, safest: safestPlayers }
+    players: { killers: topPlayerKillers, damage: topPlayerDamage, healers: topPlayerHealers, safest: safestPlayers },
+    latestBattle: latestBattle ? {
+      id: String(latestBattle.id),
+      startTime: latestBattle.start_time,
+      opponents: latestBattle.opponents,
+      result: latestBattle.result,
+      killEvents: latestKillEvents
+    } : null
   }
 }
 
@@ -195,7 +218,7 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
 
   if (!data) return <div style={{ padding: 40, textAlign: 'center' }}>Coletando dados da balança cósmica...</div>
 
-  const { rivalry, weapons, players, battlesAnalyzed } = data
+  const { rivalry, weapons, players, battlesAnalyzed, latestBattle } = data
 
   return (
     <>
@@ -223,6 +246,42 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
         </div>
       </div>
 
+      {/* ==============================================
+          SESSÃO TÁTICA: LINHA DO TEMPO & ANÁLISE DE ENGAGE (V2)
+         ============================================== */}
+      {latestBattle && (
+        <div className="glass panel anim-up" style={{ marginBottom: 24, borderTop: '3px solid var(--cyan)' }}>
+          <div className="panel-header" style={{ padding: '14px 20px', borderBottomColor: 'rgba(0, 242, 255, 0.15)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="material-symbols-outlined" style={{ color: 'var(--cyan)', fontSize: 22 }}>timeline</span>
+                <span className="section-hd" style={{ fontSize: 16, color: 'var(--text-900)' }}>
+                  Linha do Tempo Tática — Confronto Recente vs {latestBattle.opponents}
+                </span>
+                <HintIcon text="Mapeamento cronológico das baixas da guilda. Detecta se o time tomou um Bomb Squad ou um Clap frontal nos primeiros segundos." />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-400)', fontFamily: 'var(--font-mono)' }}>
+                  ID #{latestBattle.id}
+                </span>
+                <span className={`badge badge-${latestBattle.result.toLowerCase()}`}>
+                  {latestBattle.result}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="panel-body" style={{ padding: 20 }}>
+            <BattleTimeline
+              battleId={latestBattle.id}
+              startTime={latestBattle.startTime}
+              opponents={latestBattle.opponents}
+              result={latestBattle.result}
+              killEvents={latestBattle.killEvents}
+            />
+          </div>
+        </div>
+      )}
+
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(0,1fr) 400px',
@@ -242,7 +301,10 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - TOP FRAGGERS */}
               <div className="glass panel" style={{ borderTop: '3px solid #ef4444', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: '#ef4444' }} data-tooltip="Total de participações em kills no período">Top Kills (Abates)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span className="section-hd" style={{ fontSize: 13, color: '#ef4444' }}>Top Kills (Abates)</span>
+                    <HintIcon text="Total de kills acumulados por jogador em todas as lutas do período" />
+                  </div>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.killers.map((p, i) => (
@@ -260,7 +322,10 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - TOP DAMAGE */}
               <div className="glass panel" style={{ borderTop: '3px solid #f97316', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(249, 115, 22, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: '#f97316' }} data-tooltip="Dano médio por batalha (jogadores com 3+ CTAs)">Top Dano Bruto (DPS Médio)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span className="section-hd" style={{ fontSize: 13, color: '#f97316' }}>Top Dano Bruto (DPS)</span>
+                    <HintIcon text="Média de dano por batalha. Exige 3+ CTAs para entrar no ranking" />
+                  </div>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.damage.map((p, i) => (
@@ -278,7 +343,10 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - TOP HEALERS */}
               <div className="glass panel" style={{ borderTop: '3px solid #10b981', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(16, 185, 129, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: '#10b981' }} data-tooltip="Quantidade de cura por batalha (jogadores com 3+ CTAs)">Top Curadores (Heal Vivo)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span className="section-hd" style={{ fontSize: 13, color: '#10b981' }}>Top Curadores (Heal Vivo)</span>
+                    <HintIcon text="Média de cura por batalha. Exige 3+ CTAs e pelo menos 1000hp de cura" />
+                  </div>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.healers.map((p, i) => (
@@ -296,7 +364,10 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
               {/* PLAYERS - MURALHA */}
               <div className="glass panel" style={{ borderTop: '3px solid var(--cyan)', height: 320, display: 'flex', flexDirection: 'column' }}>
                 <div className="panel-header" style={{ padding: '12px 16px', background: 'rgba(6, 182, 212, 0.05)' }}>
-                  <span className="section-hd" style={{ fontSize: 13, color: 'var(--cyan)' }} data-tooltip="Percentual de sobrevivência nas lutas (jogadores com 5+ CTAs)">Maior Sobrevivência (Tanks)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span className="section-hd" style={{ fontSize: 13, color: 'var(--cyan)' }}>Maior Sobrevivência (Tanks)</span>
+                    <HintIcon text="% de lutas em que não morreu. Exige 5+ CTAs para entrar no ranking" />
+                  </div>
                 </div>
                 <div className="panel-body scroll" style={{ padding: 0 }}>
                   {players.safest.map((p, i) => {
@@ -392,7 +463,12 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
                  </div>
 
                  <div className="glass panel" style={{ borderLeft: '4px solid var(--amber)', display: 'flex', flexDirection: 'column' }}>
-                    <div className="panel-header" style={{ padding: '12px 16px' }}><span className="section-hd" style={{ fontSize: 11 }} data-tooltip="Armas menos convencionais, mas que garantiram vitória (Mais de 50% WR)">Armas Fora do Meta (Mais Vitórias Mistas)</span></div>
+                    <div className="panel-header" style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span className="section-hd" style={{ fontSize: 11 }}>Armas Fora do Meta</span>
+                        <HintIcon text="Armas pouco usadas mas com WR acima de 50%. Podem ser apostas táticas escondidas!" />
+                      </div>
+                    </div>
                     <div className="panel-body scroll" style={{ padding: 0 }}>
                       {weapons.offmeta.length > 0 ? weapons.offmeta.map((w) => {
                         const albion2d_link = `https://albiononline2d.com/pt/item/id/T8_${w.rawWeapon.replace(/^T\d_/, '').split('@')[0]}`;
@@ -544,7 +620,10 @@ export default async function MentorshipGlobalPage(props: { searchParams: Promis
           {/* LISTA NEGRA DAS ARMAS (TREND ANALYSIS) */}
           <div className="glass panel anim-up">
             <div className="panel-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.2)'}}>
-              <span className="section-hd" style={{ color: '#ef4444' }} data-tooltip="DPS ou Healers muito usados mas com WinRate baixo (< 40%)">⚠️ Red Flags (Perigo de Composição)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span className="section-hd" style={{ color: '#ef4444' }}>⚠️ Red Flags (Perigo de Composição)</span>
+                <HintIcon text="DPS e Healers frequentemente usados mas com WinRate abaixo de 40%. Tanks/Supports excluídos." />
+              </div>
             </div>
             <div className="panel-body scroll">
               {weapons.warnings.length > 0 ? (

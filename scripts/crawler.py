@@ -104,6 +104,7 @@ def process_battle_details(battle_id):
         supabase.table("battles").insert({
             "id": battle_id,
             "start_time": data.get("startedAt") or data.get("startTime"),
+            "finished_at": data.get("finishedAt"),  # V2: necessário para calcular tempo de morte
             "opponents": opponents_str,
             "result": result,
             "guild_players": imortais_info.get("players", 0),

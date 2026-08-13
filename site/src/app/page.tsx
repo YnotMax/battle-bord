@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Battle, PlayerStat } from '@/lib/types'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { HintIcon } from '@/components/HintIcon'
 
 // ── Supabase (server) ─────────────────────────────────────────────────────────
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -351,11 +352,12 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
           </div>
 
           {/* Top DPS */}
-          <div className="glass anim-up" style={{ animationDelay: '100ms', overflow: 'hidden' }}>
+          <div className="glass anim-up" style={{ animationDelay: '100ms' }}>
             <div className="panel-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dot dot-crimson" />
-                <span className="section-hd" data-tooltip="Soma do dano em todas as lutas do período">Top DPS</span>
+                <span className="section-hd">Top DPS</span>
+                <HintIcon text="Soma do dano bruto em todas as lutas do período" pos="left" />
               </div>
               <span className="label">Dano Total</span>
             </div>
@@ -397,11 +399,12 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
           </div>
 
           {/* Top Healers */}
-          <div className="glass anim-up" style={{ animationDelay: '120ms', overflow: 'hidden' }}>
+          <div className="glass anim-up" style={{ animationDelay: '120ms' }}>
             <div className="panel-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dot dot-emerald" />
-                <span className="section-hd" data-tooltip="Soma da cura em todas as lutas do período">Top Healers</span>
+                <span className="section-hd">Top Healers</span>
+                <HintIcon text="Soma da cura em todas as lutas do período" pos="left" />
               </div>
               <span className="label">Cura Total</span>
             </div>
@@ -443,11 +446,12 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
           </div>
 
           {/* Top Kills */}
-          <div className="glass anim-up" style={{ animationDelay: '140ms', overflow: 'hidden' }}>
+          <div className="glass anim-up" style={{ animationDelay: '140ms' }}>
             <div className="panel-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="dot dot-amber" />
-                <span className="section-hd" data-tooltip="Soma de abates participados em todas as lutas do período">Top Kills</span>
+                <span className="section-hd">Top Kills</span>
+                <HintIcon text="Soma de abates participados em todas as lutas do período" pos="left" />
               </div>
               <span className="label">Kills Totais</span>
             </div>
@@ -524,7 +528,8 @@ async function DashboardContent(props: { searchParams?: Promise<{ start?: string
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--cyan)' }}>trending_up</span>
-                <span className="section-hd" data-tooltip="Da luta mais antiga (E) para a mais recente (D)">Evolução do Win Rate</span>
+                <span className="section-hd">Evolução do Win Rate</span>
+                <HintIcon text="Da luta mais antiga (esq.) para a mais recente (dir.). Cada ponto agrupa um bloco de batalhas consecutivas." />
               </div>
               <span className="label" style={{ fontSize: 10 }} data-tooltip={`Média a cada ${chunkSize} lutas consecutivas`}>
                 Blocos de {chunkSize}

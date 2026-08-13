@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { PlayerRadar } from '../../../components/PlayerRadar'
 import { WeaponIcon } from '@/components/WeaponIcon'
+import { HintIcon } from '@/components/HintIcon'
 
 export const revalidate = 0 
 
@@ -56,12 +57,20 @@ async function getPlayerProfile(playerName: string) {
 
   if (!data || data.length === 0) return null
 
-  // Busca Guild global para Relativos e Média Real
-  const { data: guildData } = await sb.from('player_stats').select('role, weapon, damage_done, healing_done, kills, deaths, battle_id')
+  // V2: Busca kill events do jogador (mortes detalhadas com timestamp e arma do killer)
+  const { data: killEvents } = await sb
+    .from('kill_events')
+    .select('timestamp, killer_name, killer_weapon, killer_weapon_norm, seconds_into_battle, is_early_death, battle_id, total_participants')
+    .ilike('victim_name', playerName)
+    .order('timestamp', { ascending: false })
+
+  // Busca Guild global para Relativos e Média Real (inclui average_ip para efficiency)
+  const { data: guildData } = await sb.from('player_stats').select('role, weapon, damage_done, healing_done, kills, deaths, battle_id, average_ip')
 
   // Calcula médias globais da guilda
   let gKills = 0, gDeaths = 0, gBattles = 0
   let gRoleDmg = 0, gRoleHeal = 0, gRoleBattles = 0
+  let gRoleIP = 0, gRoleIPCount = 0
   
   const uniqueBattles = new Set<string>()
   const roleTypeParam = data[0]?.role?.toLowerCase() || ''
@@ -83,15 +92,17 @@ async function getPlayerProfile(playerName: string) {
         gRoleDmg += g.damage_done || 0
         gRoleHeal += g.healing_done || 0
         gRoleBattles += 1
+        if (g.average_ip > 0) { gRoleIP += g.average_ip; gRoleIPCount++ }
       }
     })
     gBattles = uniqueBattles.size || 1
   }
   // Médias
-  const avgGuildKillsPerPlayer = (gKills / (guildData?.length || 1)) // média de kills por participação
+  const avgGuildKillsPerPlayer = (gKills / (guildData?.length || 1))
   const avgGuildDeathsPerPlayer = (gDeaths / (guildData?.length || 1))
   const avgRoleDmg = (gRoleDmg / (gRoleBattles || 1))
   const avgRoleHeal = (gRoleHeal / (gRoleBattles || 1))
+  const avgRoleIP = gRoleIPCount > 0 ? Math.round(gRoleIP / gRoleIPCount) : 0
 
   const matches = data as unknown as PlayerMatch[]
   
@@ -240,6 +251,63 @@ async function getPlayerProfile(playerName: string) {
   const avgIP = matches.length > 0 ? Math.round(matches.reduce((s, m) => s + (m.average_ip || 0), 0) / matches.length) : 0
   const totalBattlesPlayed = matches.length
 
+  // ============== NOVOS KPIs DE COACHING ==================
+  // 1. Tendência: compara últimas 5 batalhas vs as anteriores
+  const recentSlice = matches.slice(0, Math.min(5, matches.length))
+  const olderSlice = matches.slice(5)
+  const recentWR = recentSlice.length > 0 ? recentSlice.filter(m => m.battles?.result === 'WIN').length / recentSlice.length * 100 : myP_Win
+  const olderWR = olderSlice.length >= 3 ? olderSlice.filter(m => m.battles?.result === 'WIN').length / olderSlice.length * 100 : myP_Win
+  const trendDiff = olderSlice.length >= 3 ? recentWR - olderWR : 0
+  const trendDir: 'up' | 'down' | 'stable' = trendDiff >= 15 ? 'up' : trendDiff <= -15 ? 'down' : 'stable'
+
+  // 2. Assiduidade: % de batalhas da guilda que o jogador participou
+  const attendanceRate = gBattles > 0 ? Math.round((matches.length / gBattles) * 100) : 0
+
+  // 3. KDA geral
+  const kda = totalDeaths > 0 ? parseFloat((totalKills / totalDeaths).toFixed(2)) : totalKills
+
+  // 4. Sobrevivência relativa ao role
+  const myDeathsPerBattle = totalDeaths / totalMatches
+  const survivalRatio = avgGuildDeathsPerPlayer > 0 ? myDeathsPerBattle / avgGuildDeathsPerPlayer : 1
+  const survivalStatus: 'critical' | 'good' | 'normal' = survivalRatio >= 2 ? 'critical' : survivalRatio <= 0.5 ? 'good' : 'normal'
+
+  // 5. IP Efficiency: IP alto + performance baixa = subutilizado
+  const ipEfficiency = avgRoleIP > 0 && avgIP > 0 ? Math.round((avgIP / avgRoleIP) * 100) : 100
+  const mainWeaponRelPct = enrichedWeapons[0]?.relativePct ?? 0
+  const isIPWasted = ipEfficiency >= 105 && mainWeaponRelPct <= -20
+
+  // ============== V2: KILL EVENTS (Morte Precoce + Carrasco) ==================
+  const killEventsArr = (killEvents || []) as any[]
+
+  // 6. Taxa de Morte Precoce (morreu nos primeiros 60s da luta)
+  const earlyDeaths = killEventsArr.filter(e => e.is_early_death)
+  const taxaMortePrecoce = killEventsArr.length > 0
+    ? Math.round((earlyDeaths.length / killEventsArr.length) * 100)
+    : 0
+
+  // 7. Carrasco Pessoal — arma que mais o mata (normalizada)
+  const carrascoMap: Record<string, { count: number, weapon: string, weaponNorm: string }> = {}
+  killEventsArr.forEach(e => {
+    const norm = e.killer_weapon_norm || 'Desconhecida'
+    if (!carrascoMap[norm]) carrascoMap[norm] = { count: 0, weapon: e.killer_weapon || '', weaponNorm: norm }
+    carrascoMap[norm].count++
+  })
+  const carrascoEntries = Object.values(carrascoMap).sort((a, b) => b.count - a.count)
+  const topCarrasco = carrascoEntries[0] || null
+  const topCarrascoPct = topCarrasco && killEventsArr.length > 0
+    ? Math.round((topCarrasco.count / killEventsArr.length) * 100)
+    : 0
+
+  // Carrasco das últimas 5 CTAs
+  const recentKillEvents = killEventsArr.slice(0, 5)
+  const recentCarrascoMap: Record<string, number> = {}
+  recentKillEvents.forEach(e => {
+    const norm = e.killer_weapon_norm || 'Desconhecida'
+    recentCarrascoMap[norm] = (recentCarrascoMap[norm] || 0) + 1
+  })
+  const recentCarrascoEntries = Object.entries(recentCarrascoMap).sort((a, b) => b[1] - a[1])
+  const topRecentCarrasco = recentCarrascoEntries[0]?.[0] || null
+
   return {
     rawMatches: matches,
     globalStats: {
@@ -258,86 +326,191 @@ async function getPlayerProfile(playerName: string) {
       avgIP,
       totalWins,
       totalBattlesPlayed,
+    },
+    // Indicadores de coaching (V1 + V2)
+    coaching: {
+      trendDir,
+      trendDiff: Math.round(trendDiff),
+      recentWR: Math.round(recentWR),
+      attendanceRate,
+      kda,
+      survivalStatus,
+      survivalRatio: parseFloat(survivalRatio.toFixed(1)),
+      ipEfficiency,
+      isIPWasted,
+      avgIP,
+      avgRoleIP,
+      myDeathsPerBattle: parseFloat(myDeathsPerBattle.toFixed(2)),
+      // V2: Kill Events
+      taxaMortePrecoce,
+      earlyDeathCount: earlyDeaths.length,
+      totalKillEvents: killEventsArr.length,
+      topCarrasco: topCarrasco ? topCarrasco.weaponNorm : null,
+      topCarrascoWeapon: topCarrasco ? topCarrasco.weapon : null,
+      topCarrascoPct,
+      topCarrascoCount: topCarrasco?.count || 0,
+      topRecentCarrasco,
     }
   }
 }
 
-// ALGORITMO DE COACHING 
-function generateCoachAdvice(weapons: any[], totalBattles: number) {
+// ALGORITMO DE COACHING EXPANDIDO (V1 + V2)
+type CoachStats = {
+  weapons: any[]
+  totalBattles: number
+  trendDir: 'up' | 'down' | 'stable'
+  trendDiff: number
+  recentWR: number
+  attendanceRate: number
+  kda: number
+  survivalStatus: 'critical' | 'good' | 'normal'
+  survivalRatio: number
+  isIPWasted: boolean
+  ipEfficiency: number
+  avgRoleIP: number
+  avgIP: number
+  myDeathsPerBattle: number
+  // V2
+  taxaMortePrecoce: number
+  earlyDeathCount: number
+  totalKillEvents: number
+  topCarrasco: string | null
+  topCarrascoWeapon: string | null
+  topCarrascoPct: number
+  topCarrascoCount: number
+  topRecentCarrasco: string | null
+}
+
+function generateCoachAdvice(stats: CoachStats) {
+  const { weapons, totalBattles, trendDir, trendDiff, recentWR, survivalStatus, survivalRatio, isIPWasted, ipEfficiency, avgRoleIP, avgIP, myDeathsPerBattle,
+    taxaMortePrecoce, earlyDeathCount, totalKillEvents, topCarrasco, topCarrascoWeapon, topCarrascoPct, topCarrascoCount } = stats
+  
   if (weapons.length === 0) return null
 
+  // PRIORIDADE 1: Amostragem insuficiente (bloqueia análise)
   if (totalBattles < 3) {
     return {
-      type: 'neutral',
-      icon: 'hourglass_empty',
-      color: 'var(--text-400)',
+      type: 'neutral', icon: 'hourglass_empty', color: 'var(--text-400)',
       title: 'Amostragem Insuficiente',
-      text: `Poucos dados ainda (apenas ${totalBattles} CTAs). Participe de mais ZvZs com a guilda para um diagnóstico preciso do seu impacto no Meta.`,
+      text: `Poucos dados ainda (apenas ${totalBattles} CTAs). Participe de mais ZvZs para um diagnóstico preciso do seu impacto no Meta.`,
       weaponRaw: null
     }
   }
 
-  const pW = weapons[0] 
+  const pW = weapons[0]
   const pWinRate = Math.round((pW.wins / pW.uses) * 100)
-  
+
+  // PRIORIDADE 2: Morte Precoce Recorrente (V2 — morre nos 1min quando tem todas as defensivas)
+  if (taxaMortePrecoce >= 50 && totalKillEvents >= 3) {
+    return {
+      type: 'warning', icon: 'timer_off', color: '#ef4444',
+      title: '⏱️ Morre Cedo Demais',
+      text: `Em ${taxaMortePrecoce}% das suas CTAs você morreu nos primeiros 60 segundos da luta (${earlyDeathCount} de ${totalKillEvents} mortes). Nesse intervalo você ainda tem TODAS as defensivas disponíveis. Posicione-se mais atrás na abertura do engaje.`,
+      weaponRaw: pW.rawWeapon
+    }
+  }
+
+  // PRIORIDADE 2.5: Carrasco Pessoal (V2 — arma que mais mata o jogador)
+  if (topCarrasco && topCarrascoPct >= 30 && topCarrascoCount >= 3) {
+    const carrascoNome = topCarrasco.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+    return {
+      type: 'warning', icon: 'gavel', color: '#f97316',
+      title: `🗡️ Carrasco Pessoal: ${carrascoNome}`,
+      text: `${topCarrascoPct}% das suas mortes foram para [${carrascoNome}] (${topCarrascoCount} vezes). Você está sendo finalizado repetidamente pela mesma arma. Evite expor HP baixo próximo a esse arquétipo inimigo.`,
+      weaponRaw: topCarrascoWeapon
+    }
+  }
+
+  // PRIORIDADE 3: Em Queda severa (tendência negativa grave)
+  if (trendDir === 'down' && recentWR < 30) {
+    return {
+      type: 'warning', icon: 'trending_down', color: '#ef4444',
+      title: '📉 Momento de Queda Severa',
+      text: `Alerta crítico: suas últimas 5 batalhas têm apenas ${recentWR}% de WinRate — ${Math.abs(trendDiff)}% abaixo da sua média histórica. Reveja seu posicionamento e a seleção de arma. Pode ser hora de conversar com o shotcaller.`,
+      weaponRaw: pW.rawWeapon
+    }
+  }
+
+  // PRIORIDADE 3: Sobrevivência crítica (morre 2x mais que a média do role)
+  if (survivalStatus === 'critical') {
+    return {
+      type: 'warning', icon: 'skull', color: '#ef4444',
+      title: '💣 Sobrevivência Crítica',
+      text: `Você morre ${parseFloat((myDeathsPerBattle).toFixed(1))}x por batalha — ${Math.round((survivalRatio - 1) * 100)}% acima da média do seu papel. Cada morte sua é uma luta perdida para a Zerg. Priorize posicionamento e saia mais do fogo.`,
+      weaponRaw: pW.rawWeapon
+    }
+  }
+
+  // PRIORIDADE 4: IP Subutilizado
+  if (isIPWasted) {
+    return {
+      type: 'warning', icon: 'diamond', color: '#f97316',
+      title: '🔥 IP Alto, Rendimento Baixo',
+      text: `Seu IP médio é ${avgIP} vs média do role ${avgRoleIP} — você está ${ipEfficiency - 100}% acima em equipamento mas rendendo abaixo com [${pW.weapon}]. O item não é o problema — o posicionamento sim.`,
+      weaponRaw: pW.rawWeapon
+    }
+  }
+
+  // PRIORIDADE 5: Baixo Desempenho Relativo vs core (já existia)
+  if (pW.relativePct && pW.relativePct <= -20 && pW.uses >= 5) {
+    return {
+      type: 'warning', icon: 'trending_down', color: '#ef4444',
+      title: 'Baixo Desempenho Relativo',
+      text: `Seu ${pW.compareLabel} com [${pW.weapon}] está ${Math.abs(pW.relativePct)}% abaixo da média da guilda. O núcleo extrai mais poder desse arquetipo — reveja o posicionamento.`,
+      weaponRaw: pW.rawWeapon
+    }
+  }
+
+  // PRIORIDADE 6: Talento Oculto (arma secundária melhor)
   let hiddenGem = null
   for (let i = 1; i < weapons.length; i++) {
     const sec = weapons[i]
     if (sec.uses >= 3) {
       const secWinRate = Math.round((sec.wins / sec.uses) * 100)
-      if (secWinRate > pWinRate + 15) {
-        hiddenGem = sec
-      }
+      if (secWinRate > pWinRate + 15) { hiddenGem = sec; break }
     }
   }
-
   if (hiddenGem) {
     return {
-      type: 'discovery',
-      icon: 'psychology',
-      color: 'var(--cyan)',
-      title: 'Talento Oculto Detectado!',
-      text: `O banco notou algo: Mesmo que use [${pW.weapon}] prioritariamente (${pWinRate}% de WinRate), seu aproveitamento com [${hiddenGem.weapon}] atinge ${Math.round((hiddenGem.wins / hiddenGem.uses) * 100)}% de maestria em ${hiddenGem.uses} lutas.`,
+      type: 'discovery', icon: 'psychology', color: 'var(--cyan)',
+      title: '📎 Talento Oculto Detectado!',
+      text: `O banco notou algo: com [${hiddenGem.weapon}] você atinge ${Math.round((hiddenGem.wins / hiddenGem.uses) * 100)}% de WinRate em ${hiddenGem.uses} lutas — vs ${pWinRate}% com sua arma principal [${pW.weapon}]. Pode ser hora de trocar o foco.`,
       weaponRaw: hiddenGem.rawWeapon
     }
   }
 
-  // Verifica Underperformance Relativo
-  if (pW.relativePct && pW.relativePct <= -20 && pW.uses >= 5) {
+  // PRIORIDADE 7: KDA Elite + WR alto
+  const myKDA = weapons.reduce((s, w) => s + w.kills, 0) / Math.max(1, weapons.reduce((s, w) => s + w.deaths, 0))
+  if (myKDA >= 3 && pWinRate >= 55 && pW.uses >= 5) {
     return {
-      type: 'warning',
-      icon: 'trending_down',
-      color: '#ef4444',
-      title: 'Baixo Desempenho Relativo',
-      text: `Aviso Tático: Seu engajamento com [${pW.weapon}] está ${Math.abs(pW.relativePct)}% abaixo da Média da Guilda no quesito ${pW.compareLabel}. Se posicione melhor na Zerg para garantir o uso eficiente de suas habilidades.`,
+      type: 'success', icon: 'bolt', color: '#f97316',
+      title: '⚡ Matador NATO Elite',
+      text: `KDA de ${parseFloat(myKDA.toFixed(1))} — você finaliza mais do que cai. Com ${pWinRate}% de WinRate usando [${pW.weapon}], você é um dos mais perigosos ativos da Zerg.`,
       weaponRaw: pW.rawWeapon
     }
   }
 
+  // PRIORIDADE 8: Maestria Certificada T8
   if (pWinRate >= 65 && pW.uses >= 5) {
     return {
-      type: 'success',
-      icon: 'verified',
-      color: '#10b981',
-      title: 'Maestria Certificada T8 (Supera Média)',
-      text: `Absolutamente essencial. Você carrega a espinha dorsal nas vitórias usando [${pW.weapon}]! ${pW.relativePct > 0 ? `Seu ${pW.compareLabel} é ${pW.relativePct}% MAIOR que a média dos outros jogadores que tentam usar essa arma.` : ''}`,
+      type: 'success', icon: 'verified', color: '#10b981',
+      title: '✅ Maestria Certificada T8',
+      text: `Absolutamente essencial. ${pWinRate}% de WinRate com [${pW.weapon}] em ${pW.uses} lutas.${pW.relativePct > 0 ? ` Seu ${pW.compareLabel} é ${pW.relativePct}% ACIMA da média do core.` : ''} Você carrega a guilda.`,
       weaponRaw: pW.rawWeapon
     }
   }
 
-  // Texto do padrão: contextualizado com dados reais
+  // PRIORIDADE 9: Monitoramento Padrão Ativo (baseline contextualizado)
   const winLabel = pWinRate >= 55 ? 'acima da média' : pWinRate >= 45 ? 'dentro do esperado' : 'abaixo do ideal'
-  const relativeComment = pW.relativePct > 0 
-    ? ` Seu ${pW.compareLabel} está ${pW.relativePct}% acima da média dos que usam essa arma na guilda — um sinal positivo.`
-    : pW.relativePct < -10 
-    ? ` Atenção: seu ${pW.compareLabel} está ${Math.abs(pW.relativePct)}% abaixo da média do core — foque em melhorar o posicionamento.`
+  const relativeComment = pW.relativePct > 0
+    ? ` Seu ${pW.compareLabel} está ${pW.relativePct}% acima da média dos que usam essa arma — sinal positivo.`
+    : pW.relativePct < -10
+    ? ` Atenção: ${pW.relativePct}% abaixo da média do core — foque em posicionamento.`
     : ''
   return {
-    type: 'neutral',
-    icon: 'monitoring',
-    color: 'var(--text-400)',
+    type: 'neutral', icon: 'monitoring', color: 'var(--text-400)',
     title: 'Monitoramento Padrão Ativo',
-    text: `Análise baseada em ${totalBattles} CTAs registrados. Sua arma principal [${pW.weapon}] tem WinRate de ${pWinRate}% (${winLabel} para a guilda).${relativeComment} Continue participando para dados mais precisos.`,
+    text: `Análise baseada em ${totalBattles} CTAs. [${pW.weapon}] com ${pWinRate}% WR (${winLabel}).${relativeComment}${trendDir === 'up' ? ` Em ascensão recente (+${trendDiff}% nas últimas 5 batalhas).` : ''}`,
     weaponRaw: pW.rawWeapon
   }
 }
@@ -359,7 +532,12 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
   }
 
   const { totalBattles, winRate, weapons } = profile.globalStats
-  const aiCoach = generateCoachAdvice(weapons, totalBattles)
+  const { coaching } = profile
+  const aiCoach = generateCoachAdvice({
+    weapons,
+    totalBattles,
+    ...coaching
+  })
   const mainWeapon = weapons[0]
   
   // Render match history
@@ -397,7 +575,10 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             {/* RADAR CHART PANEL */}
             <div className="glass panel anim-up">
               <div className="panel-header">
-                <span className="section-hd">Polígono de Playstyle (Radar)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span className="section-hd">Polígono de Playstyle (Radar)</span>
+                  <HintIcon text="Compara suas médias com a média do mesmo papel (Tank/DPS/Healer) na guilda" />
+                </div>
               </div>
               <div className="panel-body" style={{ padding: 0 }}>
                 <PlayerRadar data={profile.radarData} />
@@ -408,7 +589,10 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                <div className="glass panel anim-up" style={{ flexGrow: 1 }}>
                  <div className="panel-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.2)' }}>
-                   <span className="section-hd" style={{ color: '#ef4444' }}>🔪 Presa Fácil (Maior Mortalidade)</span>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                     <span className="section-hd" style={{ color: '#ef4444' }}>🔪 Presa Fácil</span>
+                     <HintIcon text="Guilda inimiga que mais causou suas mortes diretas (mín. 3 lutas)" />
+                   </div>
                  </div>
                  <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ fontSize: 13, color: 'var(--text-500)' }}>Guilda Oposta Causa-Morte:</div>
@@ -422,8 +606,11 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                </div>
 
                <div className="glass panel anim-up" style={{ flexGrow: 1 }}>
-                 <div className="panel-header" style={{ borderBottomColor: 'rgba(16, 185, 129, 0.2)' }}>
-                   <span className="section-hd" style={{ color: '#10b981' }}>🏹 Carrasco (Maior Supremacia)</span>
+                  <div className="panel-header" style={{ borderBottomColor: 'rgba(16, 185, 129, 0.2)' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                     <span className="section-hd" style={{ color: '#10b981' }}>🏹 Carrasco</span>
+                     <HintIcon text="Guilda inimiga contra qual você tem a maior taxa de vitória (mín. 2 lutas)" />
+                   </div>
                  </div>
                  <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ fontSize: 13, color: 'var(--text-500)' }}>Ganha a maioria contra:</div>
@@ -438,11 +625,163 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             </div>
           </div>
 
-          {/* AI COACH BOX */}
+          {/* INDICADORES RÁPIDOS — 4 badges sempre visíveis */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }} className="anim-up">
+            {/* Badge 1: Tendência */}
+            {(() => {
+              const { trendDir, trendDiff, recentWR } = coaching
+              const isUp = trendDir === 'up', isDown = trendDir === 'down'
+              const color = isUp ? '#10b981' : isDown ? '#ef4444' : 'var(--text-500)'
+              const bg = isUp ? 'rgba(16,185,129,0.08)' : isDown ? 'rgba(239,68,68,0.08)' : 'rgba(100,116,139,0.06)'
+              const border = isUp ? 'rgba(16,185,129,0.25)' : isDown ? 'rgba(239,68,68,0.25)' : 'rgba(100,116,139,0.15)'
+              const icon = isUp ? 'trending_up' : isDown ? 'trending_down' : 'trending_flat'
+              const label = isUp ? `+${trendDiff}% Recente` : isDown ? `${trendDiff}% Recente` : 'Estável'
+              const sub = totalBattles >= 8 ? `${recentWR}% ult. 5 lutas` : 'Poucas batalhas'
+              return (
+                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>{ icon }</span>
+                    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Tendência</span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <HintIcon text={`Compara WinRate das últimas 5 batalhas vs histórico. ${totalBattles < 8 ? 'Precisa de 8+ batalhas para ativar.' : ''}`} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{sub}</div>
+                </div>
+              )
+            })()}
+
+            {/* Badge 2: Assiduidade */}
+            {(() => {
+              const { attendanceRate } = coaching
+              const isHigh = attendanceRate >= 70, isLow = attendanceRate < 30
+              const color = isHigh ? '#10b981' : isLow ? '#ef4444' : 'var(--text-500)'
+              const bg = isHigh ? 'rgba(16,185,129,0.08)' : isLow ? 'rgba(239,68,68,0.08)' : 'rgba(100,116,139,0.06)'
+              const border = isHigh ? 'rgba(16,185,129,0.25)' : isLow ? 'rgba(239,68,68,0.25)' : 'rgba(100,116,139,0.15)'
+              const label = isHigh ? 'Assíduo 🏃' : isLow ? 'Irregular 👻' : 'Regular'
+              return (
+                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>event_available</span>
+                    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Assiduidade</span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <HintIcon text={`Participou em ${attendanceRate}% das batalhas da guilda. Acima de 70% = pilar do time. Abaixo de 30% = dados menos confiáveis.`} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{attendanceRate}% das CTAs</div>
+                </div>
+              )
+            })()}
+
+            {/* Badge 3: Sobrevivência */}
+            {(() => {
+              const { survivalStatus, myDeathsPerBattle } = coaching
+              const isCrit = survivalStatus === 'critical', isGood = survivalStatus === 'good'
+              const color = isCrit ? '#ef4444' : isGood ? '#10b981' : 'var(--text-500)'
+              const bg = isCrit ? 'rgba(239,68,68,0.08)' : isGood ? 'rgba(16,185,129,0.08)' : 'rgba(100,116,139,0.06)'
+              const border = isCrit ? 'rgba(239,68,68,0.25)' : isGood ? 'rgba(16,185,129,0.25)' : 'rgba(100,116,139,0.15)'
+              const label = isCrit ? '⚠️ Crítica' : isGood ? '🛡️ Exemplar' : 'Normal'
+              return (
+                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>favorite</span>
+                    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Sobrevivência</span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <HintIcon text={`Mortes por batalha: ${myDeathsPerBattle}. Crítico = 2× acima da média do seu role. Exemplar = menos da metade.`} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{myDeathsPerBattle} mortes/luta</div>
+                </div>
+              )
+            })()}
+
+            {/* Badge 4: KDA */}
+            {(() => {
+              const { kda } = coaching
+              const isElite = kda >= 3, isPoor = kda < 0.5
+              const color = isElite ? '#f97316' : isPoor ? '#ef4444' : 'var(--text-500)'
+              const bg = isElite ? 'rgba(249,115,22,0.08)' : isPoor ? 'rgba(239,68,68,0.06)' : 'rgba(100,116,139,0.06)'
+              const border = isElite ? 'rgba(249,115,22,0.3)' : isPoor ? 'rgba(239,68,68,0.2)' : 'rgba(100,116,139,0.15)'
+              const label = isElite ? '⚡ Elite' : isPoor ? 'Baixo' : 'Normal'
+              return (
+                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>sports_martial_arts</span>
+                    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>KDA</span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <HintIcon text={`KDA geral: Kills / Mortes. Acima de 3 = matador nato. Abaixo de 0.5 = morre mais do que derruba.`} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{kda} ratio</div>
+                </div>
+              )
+            })()}
+
+            {/* Badge 5: Morte Precoce (Early Death) */}
+            {(() => {
+              const { taxaMortePrecoce, earlyDeathCount, totalKillEvents } = coaching
+              const isAlert = taxaMortePrecoce >= 40 && totalKillEvents >= 2
+              const isGood = taxaMortePrecoce === 0 && totalKillEvents >= 2
+              const color = isAlert ? '#ef4444' : isGood ? '#10b981' : 'var(--text-500)'
+              const bg = isAlert ? 'rgba(239,68,68,0.08)' : isGood ? 'rgba(16,185,129,0.08)' : 'rgba(100,116,139,0.06)'
+              const border = isAlert ? 'rgba(239,68,68,0.25)' : isGood ? 'rgba(16,185,129,0.25)' : 'rgba(100,116,139,0.15)'
+              const label = isAlert ? '⚠️ Precoce' : isGood ? '🛡️ Seguro' : totalKillEvents === 0 ? 'Sem dados' : 'Normal'
+              return (
+                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>timer_off</span>
+                    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Morte Cedo</span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <HintIcon text={`% de mortes nos primeiros 60s da luta (quando ainda tinha todas as defensivas). Acima de 40% = alerta de posicionamento na abertura.`} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                    {totalKillEvents > 0 ? `${taxaMortePrecoce}% (${earlyDeathCount}/${totalKillEvents})` : 'Aguardando logs'}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Badge 6: Arma Carrasco */}
+            {(() => {
+              const { topCarrasco, topCarrascoWeapon, topCarrascoPct, topCarrascoCount } = coaching
+              const hasCarrasco = !!topCarrasco && topCarrascoCount >= 2
+              const color = hasCarrasco ? '#f97316' : 'var(--text-500)'
+              const bg = hasCarrasco ? 'rgba(249,115,22,0.08)' : 'rgba(100,116,139,0.06)'
+              const border = hasCarrasco ? 'rgba(249,115,22,0.25)' : 'rgba(100,116,139,0.15)'
+              const carrascoNome = topCarrasco ? topCarrasco.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : 'Nenhuma'
+              return (
+                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>gavel</span>
+                    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Arma Fatal</span>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <HintIcon text={`Arma inimiga que mais causou seu abate nas últimas batalhas registradas.`} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {topCarrascoWeapon && <WeaponIcon weapon={topCarrascoWeapon} size={20} />}
+                    <div style={{ fontSize: 12, fontWeight: 800, color, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {hasCarrasco ? carrascoNome : 'Diversas'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                    {hasCarrasco ? `${topCarrascoPct}% das mortes (${topCarrascoCount}x)` : 'Sem carrasco fixo'}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* AI COACH BOX — Diagnóstico Principal */}
           {aiCoach && (
             <div className="glass panel anim-up" style={{ 
-              borderLeft: `4px solid \${aiCoach.color}`,
-              background: 'var(--bg-card)',
+              borderLeft: `4px solid ${aiCoach.color}`,
               animationDelay: '40ms'
             }}>
               <div className="panel-body" style={{ padding: '24px 28px' }}>
@@ -467,7 +806,10 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
           {/* HISTÓRICO DE ARMAS + RELATIVO DA GUILDA */}
           <div className="glass panel anim-up" style={{ animationDelay: '80ms' }}>
             <div className="panel-header">
-              <span className="section-hd">Eficiência de Armamento Otimizada (Meta Specs vs Média do Core)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span className="section-hd">Eficiência de Armamento (Meta Specs vs Core)</span>
+                <HintIcon text="Estatísticas por arma. Relativo Core = seu dano/cura comparado à média de quem usa a mesma arma na guilda" />
+              </div>
             </div>
             <div className="panel-body scroll">
               <table className="data-table">
@@ -478,7 +820,12 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                     <th style={{ textAlign: 'center' }}>KDA</th>
                     <th style={{ textAlign: 'right' }}>DPS/Luta</th>
                     <th style={{ textAlign: 'right' }}>Heal/Luta</th>
-                    <th style={{ textAlign: 'right' }}>Relativo Core</th>
+                    <th style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                        Relativo Core
+                        <HintIcon text="Seu Dano/Cura médio vs média dos que usam essa mesma arma na guilda" />
+                      </div>
+                    </th>
                     <th style={{ textAlign: 'right' }}>WinRate</th>
                   </tr>
                 </thead>

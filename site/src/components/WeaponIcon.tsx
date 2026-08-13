@@ -2,16 +2,17 @@
 
 import React from 'react'
 
-export function WeaponIcon({ rawWeapon, size = 24 }: { rawWeapon: string, size?: number }) {
-  if (!rawWeapon || rawWeapon === 'Desconhecida') {
+export function WeaponIcon({ rawWeapon, weapon, size = 24 }: { rawWeapon?: string, weapon?: string, size?: number }) {
+  const targetWeapon = rawWeapon || weapon || ''
+  if (!targetWeapon || targetWeapon === 'Desconhecida') {
     return (
       <div style={{ width: size, height: size, background: 'var(--border-lo)', borderRadius: 4 }} />
     )
   }
 
-  // A API do Albion usa o rawWeapon exato, apenas tirando o sufixo de enchant (@1, @2, @3)
+  // A API do Albion usa o targetWeapon exato, apenas tirando o sufixo de enchant (@1, @2, @3)
   // e.g. T4_MAIN_ARCANESTAFF@3 → T4_MAIN_ARCANESTAFF
-  let baseWeapon = rawWeapon.split('@')[0]
+  let baseWeapon = targetWeapon.split('@')[0]
   
   // A API oficial exige o Tier no começo do ID (ex: T4_, T5_, T8_).
   // Se o AlbionBB API mandou a arma sem tier (ex: "MAIN_MACE_CRYSTAL"), 
@@ -25,7 +26,7 @@ export function WeaponIcon({ rawWeapon, size = 24 }: { rawWeapon: string, size?:
   return (
     <img 
       src={imgUrl} 
-      alt={rawWeapon}
+      alt={targetWeapon}
       width={size}
       height={size}
       style={{
