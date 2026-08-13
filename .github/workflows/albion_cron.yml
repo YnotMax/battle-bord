@@ -29,14 +29,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests supabase python-dotenv
           
-      - name: [Passo 1/2] Sincronizar Batalhas e Participantes (AlbionBB)
+      - name: "[Passo 1/2] Sincronizar Batalhas e Participantes (AlbionBB)"
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python scripts/crawler.py
 
-      - name: [Passo 2/2] Sincronizar Kill Events e Fases de Combate (Albion API)
+      - name: "[Passo 2/2] Sincronizar Kill Events e Fases de Combate (Albion API)"
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
