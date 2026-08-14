@@ -50,22 +50,29 @@ No perfil do operador, a IA executa o algoritmo `generateCoachAdviceList()` que 
 
 ---
 
-## 3. As 4 Fases de Combate ZvZ (`BattleTimeline.tsx`)
+## 3. As 5 Fases de Combate ZvZ Realistas (0 a 30+ minutos) (`BattleTimeline.tsx`)
 
-O componente `BattleTimeline.tsx` calcula o momento exato de cada morte e abate cruzando os timestamps:
+Como confrontos de ZvZ de larga escala no Albion Online podem durar de 15 a mais de 30 minutos (disputas de castelo, vortexes, regears e chokepoints), a linha do tempo divide a batalha em **5 fases táticas reais**:
+
 $$\text{seconds\_into\_battle} = \text{timestamp}(\text{kill\_event}) - \text{start\_time}(\text{battle})$$
 
 ```
-┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐
-│  0s a 30s        │  31s a 60s       │  61s a 120s      │  120s+           │
-│  1º Engage       │  Reset / CD      │  2º Engage       │  Finalização     │
-│  (Abertura)      │  (Pós-Choque)    │  (Sustentado)    │  (Clean-up)      │
-└──────────────────┴──────────────────┴──────────────────┴──────────────────┘
+┌──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
+│  0 a 2 min   │  2 a 5 min   │  5 a 12 min  │ 12 a 20 min  │ 20 a 30m+    │
+│  1º Choque   │  1ºs Resets  │  Batalha     │  Guerra de   │  Finalização │
+│  (Abertura)  │  (Cooldowns) │  Sustentada  │  Desgaste    │  & Clean-up  │
+└──────────────┴──────────────┴──────────────┴──────────────┴──────────────┘
 ```
 
+1. **0 a 2 min (1º Choque / Abertura):** Choque inicial de zergs onde todos têm 100% de poções e defensivas cheias.
+2. **2 a 5 min (Primeiros Resets):** Habilidades principais em recarga, reposicionamento e recuos táticos.
+3. **5 a 12 min (Batalha Sustentada):** Meio de jogo, guerra posicional em chokepoints e sustentação contínua de Healers/Tanks.
+4. **12 a 20 min (Guerra de Desgaste):** Desgaste de consumíveis, chegada de reforços, regears e re-engages profundos.
+5. **20 a 30 min+ (Finalização / Wipe):** Fase tardia de exaustão extrema da zerg adversária, perseguição e clean-up final.
+
 ### Como o Painel se adapta no Perfil Individual vs Visão de Guilda:
-* **Visão de Guilda (`/guild`):** Compara o total de **Baixas da Guilda 🟥** vs **Abates Realizados 🟩** em cada fase. Detecta se a guilda sofre wipes na entrada ou no reset.
-* **Perfil do Jogador (`/player/[name]`):** Compara as **Mortes Pessoais 🟥** vs **Abates Pessoais 🟩** daquele jogador específico. Emite diagnósticos individuais (ex: *"Morte Precoce: 60% das suas mortes acontecem nos primeiros 30s"*).
+* **Visão de Guilda (`/guild`):** Compara o total de **Baixas da Guilda 🟥** vs **Abates Realizados 🟩** em cada fase. Detecta se a guilda sofre wipes na entrada (0-2m) ou nos primeiros resets (2-5m).
+* **Perfil do Jogador (`/player/[name]`):** Compara as **Mortes Pessoais 🟥** vs **Abates Pessoais 🟩** daquele jogador específico. Emite diagnósticos individuais (ex: *"Morte Precoce: 60% das suas mortes acontecem no 1º choque (0-2 min)"* ou *"Especialista em Lutas Longas (12-30m+)"*).
 
 ---
 

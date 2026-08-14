@@ -286,8 +286,8 @@ async function getPlayerProfile(playerName: string) {
   const killEventsArr = (killEvents || []) as any[]
   const victimEvents = killEventsArr.filter(e => (e.victim_name || '').toLowerCase() === playerName.toLowerCase())
 
-  // 6. Taxa de Morte Precoce (morreu nos primeiros 60s da luta)
-  const earlyDeaths = victimEvents.filter(e => e.is_early_death)
+  // 6. Taxa de Morte Precoce (morreu no 1º choque 0-2 min da luta)
+  const earlyDeaths = victimEvents.filter(e => (e.seconds_into_battle !== null && e.seconds_into_battle <= 120) || e.is_early_death)
   const taxaMortePrecoce = victimEvents.length > 0
     ? Math.round((earlyDeaths.length / victimEvents.length) * 100)
     : 0
@@ -700,7 +700,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr)', gap: 24, alignItems: 'start' }}>
         
         {/* ── LEFT: Radar + Badges + Sub-abas Dinâmicas ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, overflowX: 'hidden' }}>
           
           {/* RADAR + RIVALIDADES */}
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
@@ -765,8 +765,8 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             </div>
           </div>
 
-          {/* 6 BADGES RÁPIDOS */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+          {/* 6 BADGES RÁPIDOS (Auto-fit responsivo sem overflow) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
             {/* Badge 1: Tendência */}
             {(() => {
               const { trendDir, trendDiff, recentWR } = coaching
@@ -884,7 +884,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                     <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>timer_off</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Morte Cedo</span>
                     <div style={{ marginLeft: 'auto' }}>
-                      <HintIcon text={`% de mortes nos primeiros 60s da luta (quando ainda tinha todas as defensivas). Acima de 40% = alerta de posicionamento na abertura.`} />
+                      <HintIcon text={`% de mortes nos primeiros 2 minutos da luta (quando ainda tinha todas as defensivas). Acima de 40% = alerta de posicionamento no 1º choque.`} />
                     </div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{isAlert ? '⚠️ Precoce' : isGood ? '🛡️ Seguro' : totalKillEvents === 0 ? 'Sem dados' : 'Normal'}</div>

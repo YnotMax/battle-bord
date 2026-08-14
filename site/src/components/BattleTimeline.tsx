@@ -57,54 +57,71 @@ export function BattleTimeline({ allBattles, killEvents, playerName }: Props) {
 
   // ─── Agrupamento por 4 Fases Táticas do Albion ZvZ ───────────────────────────
   // Fase 1: 0s - 30s   (1º Engage / Abertura — Todos com defensivas & poções)
-  // Fase 2: 31s - 60s  (Pós-Choque / Reset — Defensivas principais em Cooldown)
-  // Fase 3: 61s - 120s (2º Choque / Batalha Sustentada — Re-engages e trocas)
-  // Fase 4: > 120s     (Finalização / Clean-up & Sobrevivência tardia)
+  // ─── 5 FASES TÁTICAS DE UMA ZVZ REAL (0 a 30+ minutos) ───────────────────
+  // Fase 1: 0 - 2 min   (0s - 120s)   → 1º Choque / Abertura (Poções e defensivas cheias)
+  // Fase 2: 2 - 5 min   (121s - 300s) → Primeiros Resets & Trocação inicial de Cooldowns
+  // Fase 3: 5 - 12 min  (301s - 720s) → Batalha Sustentada (Meio de Jogo, Chokepoints e Peel)
+  // Fase 4: 12 - 20 min (721s - 1200s)→ Guerra de Desgaste (Exaustão de consumíveis e Re-engages)
+  // Fase 5: 20 - 30m+   (1201s+)      → Fase Tardia & Clean-up Final (Wipe da zerg adversária)
 
   const phases = [
     {
       id: 'p1',
-      name: '0-30s (1º Engage)',
-      short: '0-30s',
-      desc: isPlayerMode ? 'Abertura: defensivas e poções 100% disponíveis' : 'Abertura da luta: todos com poções e defensivas cheias',
-      deaths: effectiveDeaths.filter(e => (e.seconds_into_battle ?? 0) <= 30).length,
-      kills: effectiveKills.filter(e => (e.seconds_into_battle ?? 0) <= 30).length,
+      name: '0-2 min (1º Choque)',
+      short: '0-2m',
+      desc: isPlayerMode ? 'Abertura: 1º engage, defensivas e poções 100% disponíveis' : 'Abertura da luta: primeiro choque de zergs com defensivas 100% cheias',
+      deaths: effectiveDeaths.filter(e => (e.seconds_into_battle ?? 0) <= 120).length,
+      kills: effectiveKills.filter(e => (e.seconds_into_battle ?? 0) <= 120).length,
     },
     {
       id: 'p2',
-      name: '31-60s (Reset/Cooldown)',
-      short: '31-60s',
-      desc: isPlayerMode ? 'Momento de reset: suas habilidades principais estão em recarga' : 'Momento crítico: defensivas principais estão em cooldown',
+      name: '2-5 min (Primeiros Resets)',
+      short: '2-5m',
+      desc: isPlayerMode ? 'Primeiros resets: habilidades principais em recarga, reposicione-se' : 'Trocação inicial: cooldowns principais em recarga e primeiros chamados de reset',
       deaths: effectiveDeaths.filter(e => {
         const s = e.seconds_into_battle ?? 0
-        return s > 30 && s <= 60
+        return s > 120 && s <= 300
       }).length,
       kills: effectiveKills.filter(e => {
         const s = e.seconds_into_battle ?? 0
-        return s > 30 && s <= 60
+        return s > 120 && s <= 300
       }).length,
     },
     {
       id: 'p3',
-      name: '61-120s (2º Engage)',
-      short: '61-120s',
-      desc: isPlayerMode ? 'Batalha sustentada: re-engage e reposicionamento' : 'Batalha sustentada: re-engages, heals e reposicionamento',
+      name: '5-12 min (Batalha Sustentada)',
+      short: '5-12m',
+      desc: isPlayerMode ? 'Meio de jogo: disputa de chokes/terris, sustentação de Healers e peel de Tanks' : 'Meio de luta: guerra posicional contínua, disputas de chokepoint e sustentação',
       deaths: effectiveDeaths.filter(e => {
         const s = e.seconds_into_battle ?? 0
-        return s > 60 && s <= 120
+        return s > 300 && s <= 720
       }).length,
       kills: effectiveKills.filter(e => {
         const s = e.seconds_into_battle ?? 0
-        return s > 60 && s <= 120
+        return s > 300 && s <= 720
       }).length,
     },
     {
       id: 'p4',
-      name: '120s+ (Finalização)',
-      short: '120s+',
-      desc: isPlayerMode ? 'Clean-up final e sobrevivência tardia' : 'Fase tardia: perseguição, clean-up e desgaste total',
-      deaths: effectiveDeaths.filter(e => (e.seconds_into_battle ?? 0) > 120).length,
-      kills: effectiveKills.filter(e => (e.seconds_into_battle ?? 0) > 120).length,
+      name: '12-20 min (Guerra de Desgaste)',
+      short: '12-20m',
+      desc: isPlayerMode ? 'Desgaste prolongado: exaustão de consumíveis e chegada de reforços' : 'Guerra prolongada: exaustão de poções/comidas, regears e re-engages profundos',
+      deaths: effectiveDeaths.filter(e => {
+        const s = e.seconds_into_battle ?? 0
+        return s > 720 && s <= 1200
+      }).length,
+      kills: effectiveKills.filter(e => {
+        const s = e.seconds_into_battle ?? 0
+        return s > 720 && s <= 1200
+      }).length,
+    },
+    {
+      id: 'p5',
+      name: '20-30 min+ (Finalização / Wipe)',
+      short: '20m+',
+      desc: isPlayerMode ? 'Fase tardia (30m+): colapso da zerg inimiga, perseguição e clean-up final' : 'Fase tardia (30m+): exaustão extrema da zerg adversária, perseguição e wipe conclusivo',
+      deaths: effectiveDeaths.filter(e => (e.seconds_into_battle ?? 0) > 1200).length,
+      kills: effectiveKills.filter(e => (e.seconds_into_battle ?? 0) > 1200).length,
     }
   ]
 
@@ -114,6 +131,7 @@ export function BattleTimeline({ allBattles, killEvents, playerName }: Props) {
   const earlyDeathsPct = totalDeathsCount > 0 ? Math.round((earlyDeathsCount / totalDeathsCount) * 100) : 0
   const resetDeathsCount = phases[1].deaths
   const resetDeathsPct = totalDeathsCount > 0 ? Math.round((resetDeathsCount / totalDeathsCount) * 100) : 0
+  const lateKillsCount = phases[3].kills + phases[4].kills
 
   // ─── Diagnóstico Tático Inteligente ─────────────────────────────────────────
   let tacticalAdvice = isPlayerMode ? {
@@ -133,32 +151,32 @@ export function BattleTimeline({ allBattles, killEvents, playerName }: Props) {
   if (isPlayerMode) {
     if (totalDeathsCount >= 2 && earlyDeathsPct >= 40) {
       tacticalAdvice = {
-        title: '⚠️ Morte Precoce: Cuidado com o 1º Engage (0-30s)',
-        text: `${earlyDeathsPct}% das suas mortes acontecem logo na abertura do combate (0-30s). Nesse momento você ainda tem poções e defensivas cheias — use poção de resistência antes do choque e mantenha-se alinhado à main zerg.`,
+        title: '⚠️ Morte Precoce: Cuidado no 1º Choque (0-2 min)',
+        text: `${earlyDeathsPct}% das suas mortes acontecem logo na abertura do combate (0-2 min). Nesse momento você ainda tem poções e defensivas cheias — use poção de resistência antes do choque e mantenha-se alinhado à main zerg.`,
         type: 'danger',
         icon: 'warning',
         color: '#ef4444'
       }
-    } else if (totalDeathsCount >= 2 && resetDeathsPct >= 40) {
+    } else if (totalDeathsCount >= 2 && resetDeathsPct >= 35) {
       tacticalAdvice = {
-        title: '⚠️ Vulnerabilidade no Reset (31-60s)',
-        text: `${resetDeathsPct}% das suas mortes ocorrem durante o cooldown defensivo (31-60s). Após a primeira rotação de skills, recue imediatamente e aguarde o chamado do caller.`,
+        title: '⚠️ Vulnerabilidade no Reset (2-5 min)',
+        text: `${resetDeathsPct}% das suas mortes ocorrem durante os primeiros resets (2-5 min). Após a primeira rotação de skills, recue imediatamente e aguarde o chamado do caller.`,
         type: 'warning',
         icon: 'hourglass_empty',
         color: '#f97316'
       }
-    } else if (phases[0].kills > 0 && phases[0].kills >= phases[3].kills) {
+    } else if (phases[0].kills > 0 && phases[0].kills >= (phases[3].kills + phases[4].kills)) {
       tacticalAdvice = {
-        title: '⚡ Abertura Letal: Impacto no 1º Engage',
-        text: `Você é especialmente letal nos primeiros segundos de combate, aproveitando o choque inicial para garantir abates rápidos.`,
+        title: '⚡ Abertura Letal: Impacto no 1º Choque (0-2 min)',
+        text: `Você é especialmente letal nos primeiros minutos de combate, aproveitando o choque inicial para garantir abates rápidos na entrada.`,
         type: 'success',
         icon: 'bolt',
         color: '#10b981'
       }
-    } else if (phases[3].kills > 0 && phases[3].kills >= phases[0].kills) {
+    } else if (lateKillsCount > 0 && lateKillsCount >= phases[0].kills) {
       tacticalAdvice = {
-        title: '🏹 Finalizador / Clean-up (120s+)',
-        text: `Você tem excelente sobrevivência e garante grande parte dos seus abates na perseguição final e desgaste tardio.`,
+        title: '🏹 Especialista em Lutas Longas & Clean-up (12-30m+)',
+        text: `Você tem excelente sobrevivência em lutas prolongadas de meia hora e garante grande parte dos seus abates na perseguição final e desgaste tardio.`,
         type: 'success',
         icon: 'military_tech',
         color: '#10b981'
@@ -166,25 +184,25 @@ export function BattleTimeline({ allBattles, killEvents, playerName }: Props) {
     }
   } else {
     if (totalDeathsCount >= 3) {
-      if (earlyDeathsPct >= 45) {
+      if (earlyDeathsPct >= 40) {
         tacticalAdvice = {
-          title: '⚠️ Alerta de Abertura: Baixas Críticas no 1º Choque (0-30s)',
-          text: `${earlyDeathsPct}% de todas as baixas da guilda ocorrem nos primeiros 30 segundos de luta. Nesse momento, todos os operadores têm 100% das poções, defensivas e botas. Isso indica economia de defensivas, falta de foco no caller ou entrada descoordenada no primeiro clap.`,
+          title: '⚠️ Alerta de Abertura: Baixas no 1º Choque (0-2 min)',
+          text: `${earlyDeathsPct}% de todas as baixas da guilda ocorrem nos primeiros 2 minutos de luta. Nesse momento, todos os operadores têm 100% das poções, defensivas e botas. Isso indica economia de defensivas ou entrada descoordenada no primeiro clap.`,
           type: 'danger',
           icon: 'warning',
           color: '#ef4444'
         }
-      } else if (resetDeathsPct >= 40) {
+      } else if (resetDeathsPct >= 35) {
         tacticalAdvice = {
-          title: '⚠️ Alerta de Reset: Baixas no Cooldown Defensivo (31-60s)',
-          text: `${resetDeathsPct}% das baixas ocorrem entre 31s e 60s. A guilda sobrevive ao primeiro clap, mas não recua de forma coordenada durante o cooldown das poções/habilidades. Treine a chamada de "RESET e ESPALHAR" após o primeiro choque.`,
+          title: '⚠️ Alerta de Reset: Baixas nos Primeiros Cooldowns (2-5 min)',
+          text: `${resetDeathsPct}% das baixas ocorrem entre 2 e 5 minutos. A guilda sobrevive ao primeiro clap, mas não recua de forma coordenada durante o cooldown das poções/habilidades. Treine a chamada de "RESET e ESPALHAR" após o primeiro choque.`,
           type: 'warning',
           icon: 'hourglass_empty',
           color: '#f97316'
         }
       } else if (phases[0].kills > phases[0].deaths && phases[0].kills >= 3) {
         tacticalAdvice = {
-          title: '⚡ Abertura Letal: Vantagem no 1º Engage',
+          title: '⚡ Abertura Letal: Vantagem no 1º Engage (0-2 min)',
           text: `A guilda tem forte impacto na entrada, conseguindo abater mais alvos na abertura do que sofrer baixas. O ponto de atenção é manter essa vantagem sem se overextender nas fases seguintes.`,
           type: 'success',
           icon: 'military_tech',
@@ -227,7 +245,9 @@ export function BattleTimeline({ allBattles, killEvents, playerName }: Props) {
               cursor: 'pointer',
               outline: 'none',
               fontFamily: 'var(--font-display)',
-              boxShadow: 'var(--shadow-sm)'
+              boxShadow: 'var(--shadow-sm)',
+              maxWidth: '100%',
+              textOverflow: 'ellipsis'
             }}
           >
             <option value="all">Todas as Batalhas do Período ({killEvents.length} eventos registrados)</option>
