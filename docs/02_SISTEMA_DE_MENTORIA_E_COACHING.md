@@ -1,79 +1,95 @@
 # 02 — Sistema de Mentoria Tática & AI Coaching
 
-> **Battle Board I M O R T A I S** — Especificação Completa do Algoritmo de Coaching
+> **Battle Board I M O R T A I S** — Especificação Técnica Completa de Mentoria, Diagnósticos de IA, Fases de Combate e Origem dos Dados.
 
 ---
 
-## 1. O Algoritmo de AI Coaching do Jogador (`/player/[name]`)
+## 1. Origem dos Dados & Fluxo de Coleta
 
-No centro da página de cada operador, o sistema analisa o histórico completo e emite **1 diagnóstico prioritário** acionável, avaliado na seguinte ordem de precedência:
+Os dados que alimentam toda a inteligência da Mentoria Tática vêm da combinação de duas APIs externas sincronizadas no Supabase:
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Prioridade 1: Amostragem Insuficiente (< 3 CTAs)        │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 2: Morte Precoce Crônica (≥50% em ≤60s)      │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 2.5: Carrasco Pessoal (≥30% mortes p/ arma)  │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 3: Momento de Queda Severa (WR recente <30%) │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 4: Sobrevivência Crítica (Mortes 2x > role)  │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 5: IP Subutilizado (IP +5% acima & Dano -20%)│
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 6: Baixo Desempenho Relativo (Dano/Cura -20%)│
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 7: Talento Oculto (Arma secundária +15% WR)  │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 8: Matador NATO Elite (KDA ≥3 e WR ≥55%)     │
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 9: Maestria Certificada T8 (WR ≥65% e 5+ CTAs)│
-├──────────────────────────────────────────────────────────┤
-│  Prioridade 10: Monitoramento Padrão Ativo (Baseline)    │
-└──────────────────────────────────────────────────────────┘
+┌───────────────────────────┐      ┌───────────────────────────┐
+│       AlbionBB API        │      │    Albion Online API      │
+│   (api.albionbb.com)      │      │ (gameinfo.albiononline)   │
+└─────────────┬─────────────┘      └─────────────┬─────────────┘
+              │                                  │
+    [crawler.py (Passo 1)]             [crawler_kills.py (Passo 2)]
+              │                                  │
+              ▼                                  ▼
+      Tabelas Supabase:                  Tabela Supabase:
+   • `battles` (Resultado, Horário)       • `kill_events` (Timestamp,
+   • `player_stats` (Dano, Cura, IP,        Vítima, Assassino, Arma,
+      Armas, Kills, Mortes)                 Segundos de luta, EarlyDeath)
 ```
 
 ---
 
-## 2. Indicadores Rápidos do Operador (6 Badges)
+## 2. O Carrossel de AI Coaching (`/player/[name]`)
 
-Exibidos em formato de cards responsivos com tooltips interativos (`HintIcon`):
+No perfil do operador, a IA executa o algoritmo `generateCoachAdviceList()` que avalia **todas** as regras e compila uma lista de diagnósticos exibidos em um **Carrossel Interativo com setas `<` e `>`** ([CoachCarousel.tsx](file:///d:/estudos/albion%20online/battle%20bord/site/src/components/CoachCarousel.tsx)).
 
-| Badge | Métrica | Critérios de Cor |
+### Tabela Completa de Regras & Diagnósticos de IA:
+
+| # | Categoria & Ícone | Diagnóstico / Título | Gatilho Matemático (Condição) | Fonte dos Dados | Objetivo Pedagógico & Feedback |
+|---|---|---|---|---|---|
+| 1 | ⚠️ **Erro Crítico** (`timer_off`) | **Morte Precoce na Abertura** | `taxaMortePrecoce >= 35%` e `totalKillEvents >= 2` | `kill_events.is_early_death` | Alerta que o jogador morre nos primeiros 60s com poções e defensivas cheias. Cobra uso de Poção de Resistência no 1º choque. |
+| 2 | 📉 **Rendimento Insuficiente** (`trending_down`) | **Rendimento Abaixo do Core** | `relativePct <= -15%` e `uses >= 3` | `player_stats.damage_done` / `healing_done` vs média da Guilda | Alerta que o dano/cura está 15% a 30% abaixo dos outros membros que usam a mesma arma. |
+| 3 | ❌ **Armamento Ineficiente** (`cancel`) | **Arma Principal Ineficiente** | `pWinRate <= 40%` e `uses >= 4` | `player_stats` agrupado por arma | Cobra a troca de arma ou ajuste de build quando a spec mais jogada não gera vitórias para a Zerg. |
+| 4 | 💀 **Sobrevivência Crítica** (`skull`) | **Alta Taxa de Mortes (Feed)** | `survivalStatus === 'critical'` (`mortes/luta >= 2x` média do role) | `player_stats.deaths` vs média do papel | Alerta que o jogador morre o dobro da média da classe, alimentando a fama inimiga e desfalcando a party. |
+| 5 | 💸 **Desperdício de Gear** (`diamond`) | **IP Alto com Impacto Baixo** | `isIPWasted` (`avgIP >= avgRoleIP + 5%` e `relativePct <= -20%`) | `player_stats.average_ip` vs `damage/healing` | Cobra o jogador que entra com set caro (T8.3/T8.4) mas não converte em impacto na luta. |
+| 6 | ⚔️ **Ponto Fraco Tático** (`gavel`) | **Vulnerabilidade a Carrasco** | `topCarrascoCount >= 2` | `kill_events.killer_weapon_norm` | Identifica a arma inimiga que mais o abate e instrui a respeitar o range desse arquétipo. |
+| 7 | 📉 **Momento em Queda** (`trending_down`) | **Fase Negativa Recente** | `trendDir === 'down'` e `recentWR < 35%` | `battles.result` (últimas 5 lutas vs histórico) | Identifica queda abrupta de rendimento recente e recomenda alinhar postura com o shotcaller. |
+| 8 | 📅 **Frequência em CTAs** (`event_busy`) | **Presença Baixa / Irregular** | `attendanceRate < 40%` e `totalBattles >= 3` | `player_stats.battle_id` count vs total de batalhas da guilda | Alerta que a falta de presença quebra o entrosamento com os suportes e a party. |
+| 9 | 💡 **Oportunidade Tática** (`psychology`) | **Talento Oculto Detectado!** | `secWinRate > pWinRate + 12%` e `secUses >= 3` | `player_stats` comparando armas secundárias | Descobre armas secundárias onde o jogador atinge WinRate muito superior ao da arma principal. |
+| 10 | 📈 **Evolução Tática** (`trending_up`) | **Momento de Ascensão** | `trendDir === 'up'` e `trendDiff >= 15%` | `battles.result` (últimas 5 lutas) | Reconhece evolução positiva e consistência nas últimas CTAs. |
+| 11 | 🛡️ **Sobrevivência Exemplar** (`verified_user`) | **Sobrevivência de Elite** | `survivalStatus === 'good'` e `totalBattles >= 4` | `player_stats.deaths` vs média do papel | Parabeniza a preservação de regear e sustentação em lutas longas. |
+| 12 | ⚡ **Rendimento de Destaque** (`bolt`) | **Dano/Cura Superior ao Core** | `relativePct >= 20%` e `uses >= 4` | `player_stats` vs média do core | Destaca jogadores cujo dano ou cura supera em 20%+ os outros usuários da mesma spec. |
+| 13 | 🏅 **Maestria em Campo** (`military_tech`) | **Maestria Validada T8** | `pWinRate >= 60%` e `uses >= 4` | `player_stats` com arma principal | Certifica a arma de assinatura do operador como pilar de vitória da guilda. |
+| 14 | 📊 **Visão Geral** (`analytics`) | **Monitoramento Padrão Ativo** | *Sempre incluído como baseline* | Agregação consolidada geral | Resumo executivo de amostragem, spec primária e taxa de vitórias acumulada. |
+
+---
+
+## 3. As 4 Fases de Combate ZvZ (`BattleTimeline.tsx`)
+
+O componente `BattleTimeline.tsx` calcula o momento exato de cada morte e abate cruzando os timestamps:
+$$\text{seconds\_into\_battle} = \text{timestamp}(\text{kill\_event}) - \text{start\_time}(\text{battle})$$
+
+```
+┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+│  0s a 30s        │  31s a 60s       │  61s a 120s      │  120s+           │
+│  1º Engage       │  Reset / CD      │  2º Engage       │  Finalização     │
+│  (Abertura)      │  (Pós-Choque)    │  (Sustentado)    │  (Clean-up)      │
+└──────────────────┴──────────────────┴──────────────────┴──────────────────┘
+```
+
+### Como o Painel se adapta no Perfil Individual vs Visão de Guilda:
+* **Visão de Guilda (`/guild`):** Compara o total de **Baixas da Guilda 🟥** vs **Abates Realizados 🟩** em cada fase. Detecta se a guilda sofre wipes na entrada ou no reset.
+* **Perfil do Jogador (`/player/[name]`):** Compara as **Mortes Pessoais 🟥** vs **Abates Pessoais 🟩** daquele jogador específico. Emite diagnósticos individuais (ex: *"Morte Precoce: 60% das suas mortes acontecem nos primeiros 30s"*).
+
+---
+
+## 4. As 6 Badges do Operador
+
+Localizadas logo abaixo do Polígono de Playstyle (Radar) no perfil do jogador:
+
+| Badge | Métrica & Cálculo | Critérios Visuais |
 |---|---|---|
-| **📈 Tendência** | WR últimas 5 lutas vs histórico | 🟩 +15% (Ascensão) \| 🟥 -15% (Queda) \| ⬜ Estável |
-| **🏃 Assiduidade** | % de CTAs da guilda participadas | 🟩 ≥70% (Assíduo) \| 🟥 <30% (Irregular) |
-| **🛡️ Sobrevivência** | Média de mortes/luta vs média do Role | 🟥 ≥2x média (Crítica) \| 🟩 ≤0.5x (Exemplar) |
-| **⚡ KDA** | `Kills / Math.max(1, Mortes)` | 🟧 ≥3.0 (Elite) \| 🟥 <0.5 (Baixo) |
-| **⏱️ Morte Cedo** | % de mortes em &le;60s da luta | 🟥 ≥40% (Alerta de Defensivas) \| 🟩 0% (Seguro) |
-| **🗡️ Arma Fatal** | Arma que mais causou mortes ao player | 🟧 ≥2 mortes (Exibe ícone oficial da arma) |
+| **📈 Tendência** | $\Delta WR = WR_{\text{últimas 5}} - WR_{\text{geral}}$ | 🟩 $\ge +15\%$ (Em Alta) \| 🟥 $\le -15\%$ (Em Queda) \| ⬜ Estável |
+| **🏃 Assiduidade** | $\min\left(100, \text{round}\left(\frac{\text{CTAs jogadas}}{\text{Total CTAs guilda}} \times 100\right)\right)$ | 🟩 $\ge 70\%$ (Exemplar) \| 🟥 $< 35\%$ (Irregular) \| 🟦 Regular |
+| **🛡️ Sobrevivência** | $\text{Ratio} = \frac{\text{Mortes/luta do player}}{\text{Média mortes do role}}$ | 🟩 $\le 0.6$ (Alta) \| 🟥 $\ge 1.8$ (Crítica) \| 🟦 Normal |
+| **⚡ KDA** | $\frac{\text{Kills Totais}}{\max(1, \text{Mortes Totais})}$ | 🟩 $\ge 3.0$ (Elite) \| 🟥 $< 1.0$ (Baixo) \| 🟦 Normal |
+| **⏱️ Morte Cedo** | $\frac{\text{Mortes em } \le 60\text{s}}{\text{Total mortes com log}} \times 100$ | 🟥 $\ge 40\%$ (⚠️ Precoce) \| 🟩 $0\%$ (🛡️ Seguro) \| ⬜ Sem dados |
+| **🗡️ Arma Fatal** | Arma inimiga que mais causou abates contra o jogador | 🟧 $\ge 2$ mortes (Ícone oficial + nome formatado) \| ⬜ Diversas |
 
 ---
 
-## 3. Inteligência Macro de Guilda: Fases de Combate (`/guild`)
+## 5. Navegação Ergonômica por Sub-Abas (`PlayerTabsView.tsx`)
 
-Em vez de analisar apenas uma batalha isolada, a aba Mentoria analisa a distribuição de combate de **todas as batalhas do período**:
+Para garantir excelente usabilidade sem exigir que o usuário role a tela verticalmente por quilômetros, a área analítica do jogador é dividida em duas sub-abas:
 
-### As 4 Fases Táticas do Albion ZvZ
-1. **0s a 30s (1º Engage / Abertura):**
-   - *Condição:* Todos os operadores possuem 100% das poções, defensivas e botas disponíveis.
-   - *Alerta se mortes ≥ 45%:* Baixas por economia de defensivas, falta de foco no shotcaller ou posicionamento desorganizado na abertura.
-2. **31s a 60s (Pós-Choque / Reset):**
-   - *Condição:* Habilidades e poções principais entraram em tempo de recarga (~30s CD).
-   - *Alerta se mortes ≥ 40%:* A guilda sobrevive ao primeiro choque, mas não recua de forma coordenada durante o cooldown (falta de chamada de "RESET e ESPALHAR").
-3. **61s a 120s (2º Engage / Batalha Sustentada):**
-   - *Condição:* Segunda rotação de habilidades, reposicionamento de Healers e Tanks segurando a formação.
-4. **120s+ (Finalização / Desgaste):**
-   - *Condição:* Sobrevivência tardia, perseguição e clean-up.
-
----
-
-## 4. Detecção de Bomb Squads vs Zerg Claps
-
-Quando ocorrem picos de 4+ mortes em uma janela de 5 segundos, o algoritmo classifica o evento examinando as armas dos assassinos:
-
-* **Armas de Bomb Squad (Flanco/Burst):**
-  `Rift Glaive`, `Glaive`, `Hellfire Hands`, `Bloodletter`, `Wailing Bow`, `Fire Bomb Staff`, `Hallowfall`, `Glacial Staff`, `Soulscythe`, `Camlann Mace`, `Grovekeeper`.
-* **Armas de Zerg Clap (Choque Frontal da Main Zerg):**
-  `Dual Scimitar Undead`, `Galatine Pair`, `Kingmaker`, `Arcane Staff`, `Fire Staff`, `Holy Staff`, `Cursed Staff`, `Spear`.
+1. **Aba 🧠 Mentoria & Fases de Combate:**
+   * Carrossel de Diagnósticos de IA (`CoachCarousel.tsx`) com setas de navegação `< >`.
+   * Gráfico de barras das 4 Fases de Combate (`BattleTimeline.tsx`) e Top Armas Inimigas Fatais.
+2. **Aba ⚔️ Eficiência de Armas (Meta vs Core):**
+   * Tabela comparativa completa de armas, DPS/luta, Heal/luta, KDA, WinRate e percentual Relativo Core vs guilda.

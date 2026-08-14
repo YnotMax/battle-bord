@@ -3,6 +3,8 @@ import { PlayerRadar } from '../../../components/PlayerRadar'
 import { WeaponIcon } from '@/components/WeaponIcon'
 import { HintIcon } from '@/components/HintIcon'
 import { BattleTimeline, KillEventItem } from '@/components/BattleTimeline'
+import { CoachCarousel, CoachInsight } from '@/components/CoachCarousel'
+import { PlayerTabsView } from '@/components/PlayerTabsView'
 
 export const revalidate = 0 
 
@@ -368,7 +370,7 @@ async function getPlayerProfile(playerName: string) {
   }
 }
 
-// ALGORITMO DE COACHING EXPANDIDO (V1 + V2)
+// ALGORITMO DE COACHING EXPANDIDO — GERA LISTA COMPLETA DE DIAGNÓSTICOS (CARROSSEL)
 type CoachStats = {
   weapons: any[]
   totalBattles: number
@@ -395,138 +397,223 @@ type CoachStats = {
   topRecentCarrasco: string | null
 }
 
-function generateCoachAdvice(stats: CoachStats) {
-  const { weapons, totalBattles, trendDir, trendDiff, recentWR, survivalStatus, survivalRatio, isIPWasted, ipEfficiency, avgRoleIP, avgIP, myDeathsPerBattle,
-    taxaMortePrecoce, earlyDeathCount, totalKillEvents, topCarrasco, topCarrascoWeapon, topCarrascoPct, topCarrascoCount } = stats
+function generateCoachAdviceList(stats: CoachStats): CoachInsight[] {
+  const {
+    weapons, totalBattles, trendDir, trendDiff, recentWR, attendanceRate, kda, survivalStatus, survivalRatio,
+    isIPWasted, ipEfficiency, avgRoleIP, avgIP, myDeathsPerBattle,
+    taxaMortePrecoce, earlyDeathCount, totalKillEvents, topCarrasco, topCarrascoWeapon, topCarrascoPct, topCarrascoCount
+  } = stats
   
-  if (weapons.length === 0) return null
+  if (weapons.length === 0) return []
 
-  // PRIORIDADE 1: Amostragem insuficiente (bloqueia análise)
-  if (totalBattles < 3) {
-    return {
-      type: 'neutral', icon: 'hourglass_empty', color: 'var(--text-400)',
-      title: 'Amostragem Insuficiente',
-      text: `Poucos dados ainda (apenas ${totalBattles} CTAs). Participe de mais ZvZs para um diagnóstico preciso do seu impacto no Meta.`,
-      weaponRaw: null
-    }
-  }
-
+  const list: CoachInsight[] = []
   const pW = weapons[0]
   const pWinRate = Math.round((pW.wins / pW.uses) * 100)
 
-  // PRIORIDADE 2: Morte Precoce Recorrente (V2 — morre nos 1min quando tem todas as defensivas)
-  if (taxaMortePrecoce >= 50 && totalKillEvents >= 3) {
-    return {
-      type: 'warning', icon: 'timer_off', color: '#ef4444',
-      title: '⏱️ Morre Cedo Demais',
-      text: `Em ${taxaMortePrecoce}% das suas CTAs você morreu nos primeiros 60 segundos da luta (${earlyDeathCount} de ${totalKillEvents} mortes). Nesse intervalo você ainda tem TODAS as defensivas disponíveis. Posicione-se mais atrás na abertura do engaje.`,
+  // 1. [CRÍTICO] MORTE PRECOCE (Morre em <= 60s com defensivas cheias)
+  if (taxaMortePrecoce >= 35 && totalKillEvents >= 2) {
+    list.push({
+      id: 'early-death',
+      type: 'danger',
+      icon: 'timer_off',
+      color: '#ef4444',
+      category: '⚠️ Erro Crítico: Defensivas',
+      title: `Morte Precoce na Abertura (${taxaMortePrecoce}% das vezes)`,
+      text: `Você caiu nos primeiros 60 segundos em ${taxaMortePrecoce}% das suas baixas (${earlyDeathCount} de ${totalKillEvents} mortes). Morrer de cooldown cheio e poção na bolsa é a pior falha de ZvZ. Use poção de resistência antes do choque e mantenha-se alinhado à main zerg.`,
       weaponRaw: pW.rawWeapon
-    }
+    })
   }
 
-  // PRIORIDADE 2.5: Carrasco Pessoal (V2 — arma que mais mata o jogador)
-  if (topCarrasco && topCarrascoPct >= 30 && topCarrascoCount >= 3) {
-    const carrascoNome = topCarrasco.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
-    return {
-      type: 'warning', icon: 'gavel', color: '#f97316',
-      title: `🗡️ Carrasco Pessoal: ${carrascoNome}`,
-      text: `${topCarrascoPct}% das suas mortes foram para [${carrascoNome}] (${topCarrascoCount} vezes). Você está sendo finalizado repetidamente pela mesma arma. Evite expor HP baixo próximo a esse arquétipo inimigo.`,
-      weaponRaw: topCarrascoWeapon
-    }
-  }
-
-  // PRIORIDADE 3: Em Queda severa (tendência negativa grave)
-  if (trendDir === 'down' && recentWR < 30) {
-    return {
-      type: 'warning', icon: 'trending_down', color: '#ef4444',
-      title: '📉 Momento de Queda Severa',
-      text: `Alerta crítico: suas últimas 5 batalhas têm apenas ${recentWR}% de WinRate — ${Math.abs(trendDiff)}% abaixo da sua média histórica. Reveja seu posicionamento e a seleção de arma. Pode ser hora de conversar com o shotcaller.`,
+  // 2. [CRÍTICO] RENDIMENTO ABAIXO DO CORE DA GUILDA
+  if (pW.relativePct && pW.relativePct <= -15 && pW.uses >= 3) {
+    list.push({
+      id: 'rel-low',
+      type: 'danger',
+      icon: 'trending_down',
+      color: '#ef4444',
+      category: '📉 Rendimento Insuficiente',
+      title: `Rendimento com [${pW.weapon}] ${Math.abs(pW.relativePct)}% Abaixo da Média`,
+      text: `Seu ${pW.compareLabel} médio está ${Math.abs(pW.relativePct)}% abaixo da média dos outros jogadores que usam essa mesma arma na guilda. Você não está extraindo o potencial do arquétipo — revise rotações de skills e posicionamento no engage.`,
       weaponRaw: pW.rawWeapon
-    }
+    })
   }
 
-  // PRIORIDADE 3: Sobrevivência crítica (morre 2x mais que a média do role)
+  // 3. [CRÍTICO] BAIXA TAXA DE VITÓRIA COM A ARMA PRINCIPAL
+  if (pWinRate <= 40 && pW.uses >= 4) {
+    list.push({
+      id: 'low-wr-main',
+      type: 'danger',
+      icon: 'cancel',
+      color: '#ef4444',
+      category: '❌ Escolha de Armamento',
+      title: `Arma Principal Ineficiente (${pWinRate}% WR)`,
+      text: `Sua taxa de vitória com [${pW.weapon}] é de apenas ${pWinRate}% em ${pW.uses} lutas. Essa arma não está gerando impacto positivo para a guilda. Recomenda-se testar outra spec ou conversar com a liderança para ajustar a build.`,
+      weaponRaw: pW.rawWeapon
+    })
+  }
+
+  // 4. [CRÍTICO] SOBREVIVÊNCIA CRÍTICA (Feed de Fama)
   if (survivalStatus === 'critical') {
-    return {
-      type: 'warning', icon: 'skull', color: '#ef4444',
-      title: '💣 Sobrevivência Crítica',
-      text: `Você morre ${parseFloat((myDeathsPerBattle).toFixed(1))}x por batalha — ${Math.round((survivalRatio - 1) * 100)}% acima da média do seu papel. Cada morte sua é uma luta perdida para a Zerg. Priorize posicionamento e saia mais do fogo.`,
+    list.push({
+      id: 'survival-crit',
+      type: 'danger',
+      icon: 'skull',
+      color: '#ef4444',
+      category: '💀 Sobrevivência Crítica',
+      title: `Alta Taxa de Mortes (${myDeathsPerBattle.toFixed(1)}x por Luta)`,
+      text: `Você morre ${myDeathsPerBattle.toFixed(1)} vezes por batalha — ${Math.round((survivalRatio - 1) * 100)}% acima da média do seu papel. Cada morte prematura alimenta a fama do inimigo e deixa a Zerg em desvantagem numérica. Priorize sair das poças de dano.`,
       weaponRaw: pW.rawWeapon
-    }
+    })
   }
 
-  // PRIORIDADE 4: IP Subutilizado
+  // 5. [CRÍTICO] IP DESPERDIÇADO (Set Caro, Baixo Retorno)
   if (isIPWasted) {
-    return {
-      type: 'warning', icon: 'diamond', color: '#f97316',
-      title: '🔥 IP Alto, Rendimento Baixo',
-      text: `Seu IP médio é ${avgIP} vs média do role ${avgRoleIP} — você está ${ipEfficiency - 100}% acima em equipamento mas rendendo abaixo com [${pW.weapon}]. O item não é o problema — o posicionamento sim.`,
+    list.push({
+      id: 'ip-wasted',
+      type: 'warning',
+      icon: 'diamond',
+      color: '#f97316',
+      category: '💸 Desperdício de Equipamento',
+      title: 'IP Alto com Impacto Baixo',
+      text: `Seu IP médio é ${avgIP} (vs média ${avgRoleIP} do papel) — você entra com set caro, mas seu dano/cura está -${Math.abs(pW.relativePct)}% abaixo da guilda. O problema não é o tier do seu set, mas a sua tomada de decisão em luta.`,
       weaponRaw: pW.rawWeapon
-    }
+    })
   }
 
-  // PRIORIDADE 5: Baixo Desempenho Relativo vs core (já existia)
-  if (pW.relativePct && pW.relativePct <= -20 && pW.uses >= 5) {
-    return {
-      type: 'warning', icon: 'trending_down', color: '#ef4444',
-      title: 'Baixo Desempenho Relativo',
-      text: `Seu ${pW.compareLabel} com [${pW.weapon}] está ${Math.abs(pW.relativePct)}% abaixo da média da guilda. O núcleo extrai mais poder desse arquetipo — reveja o posicionamento.`,
-      weaponRaw: pW.rawWeapon
-    }
+  // 6. [CRÍTICO] VULNERABILIDADE A CARRASCO INIMIGO
+  if (topCarrasco && topCarrascoCount >= 2) {
+    const carrascoNome = topCarrasco.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+    list.push({
+      id: 'carrasco',
+      type: 'warning',
+      icon: 'gavel',
+      color: '#f97316',
+      category: '⚔️ Ponto Fraco Tático',
+      title: `Vulnerabilidade Contra: ${carrascoNome}`,
+      text: `${topCarrascoPct}% das suas mortes foram causadas por [${carrascoNome}] (${topCarrascoCount} vezes). Você está sendo caçado ou exposto repetidamente ao range dessa arma. Mantenha distância desse arquétipo.`,
+      weaponRaw: topCarrascoWeapon
+    })
   }
 
-  // PRIORIDADE 6: Talento Oculto (arma secundária melhor)
-  let hiddenGem = null
+  // 7. [CRÍTICO] MOMENTO DE QUEDA RECENTE
+  if (trendDir === 'down' && recentWR < 35) {
+    list.push({
+      id: 'trend-down',
+      type: 'warning',
+      icon: 'trending_down',
+      color: '#ef4444',
+      category: '📉 Momento em Queda',
+      title: 'Fase Negativa Recente (WR < 35%)',
+      text: `Nas últimas 5 batalhas você venceu apenas ${recentWR}% — uma queda de ${Math.abs(trendDiff)}% em relação ao seu histórico. Algo mudou na sua postura ou na dinâmica da party. Reveja a comunicação no Discord.`,
+      weaponRaw: pW.rawWeapon
+    })
+  }
+
+  // 8. [CRÍTICO] PRESENÇA IRREGULAR
+  if (attendanceRate < 40 && totalBattles >= 3) {
+    list.push({
+      id: 'low-attendance',
+      type: 'warning',
+      icon: 'event_busy',
+      color: '#f97316',
+      category: '📅 Frequência em CTAs',
+      title: `Presença Baixa (${attendanceRate}% das CTAs)`,
+      text: `Você participou de apenas ${attendanceRate}% das batalhas da guilda. Jogar com pouca frequência quebra o ritmo tático e a sintonia com os suportes da sua party.`,
+      weaponRaw: null
+    })
+  }
+
+  // 9. [POSITIVO] TALENTO OCULTO
   for (let i = 1; i < weapons.length; i++) {
     const sec = weapons[i]
     if (sec.uses >= 3) {
       const secWinRate = Math.round((sec.wins / sec.uses) * 100)
-      if (secWinRate > pWinRate + 15) { hiddenGem = sec; break }
-    }
-  }
-  if (hiddenGem) {
-    return {
-      type: 'discovery', icon: 'psychology', color: 'var(--cyan)',
-      title: '📎 Talento Oculto Detectado!',
-      text: `O banco notou algo: com [${hiddenGem.weapon}] você atinge ${Math.round((hiddenGem.wins / hiddenGem.uses) * 100)}% de WinRate em ${hiddenGem.uses} lutas — vs ${pWinRate}% com sua arma principal [${pW.weapon}]. Pode ser hora de trocar o foco.`,
-      weaponRaw: hiddenGem.rawWeapon
+      if (secWinRate > pWinRate + 12) {
+        list.push({
+          id: 'hidden-gem',
+          type: 'discovery',
+          icon: 'psychology',
+          color: 'var(--cyan)',
+          category: '💡 Oportunidade Tática',
+          title: 'Talento Oculto Detectado!',
+          text: `O banco notou algo positivo: com [${sec.weapon}] você atinge ${secWinRate}% de WinRate em ${sec.uses} lutas — vs ${pWinRate}% com sua arma principal [${pW.weapon}]. Considere migrar para essa spec nos treinos.`,
+          weaponRaw: sec.rawWeapon
+        })
+        break
+      }
     }
   }
 
-  // PRIORIDADE 7: KDA Elite + WR alto
-  const myKDA = weapons.reduce((s, w) => s + w.kills, 0) / Math.max(1, weapons.reduce((s, w) => s + w.deaths, 0))
-  if (myKDA >= 3 && pWinRate >= 55 && pW.uses >= 5) {
-    return {
-      type: 'success', icon: 'bolt', color: '#f97316',
-      title: '⚡ Matador NATO Elite',
-      text: `KDA de ${parseFloat(myKDA.toFixed(1))} — você finaliza mais do que cai. Com ${pWinRate}% de WinRate usando [${pW.weapon}], você é um dos mais perigosos ativos da Zerg.`,
+  // 10. [POSITIVO] EVOLUÇÃO / MOMENTO POSITIVO
+  if (trendDir === 'up' && trendDiff >= 15) {
+    list.push({
+      id: 'trend-up',
+      type: 'success',
+      icon: 'trending_up',
+      color: '#10b981',
+      category: '📈 Evolução Tática',
+      title: 'Momento de Ascensão Recente',
+      text: `Excelente momento! Nas últimas 5 batalhas você atingiu ${recentWR}% de WinRate (+${trendDiff}% acima da média geral). Mantenha o foco e a comunicação ativa.`,
       weaponRaw: pW.rawWeapon
-    }
+    })
   }
 
-  // PRIORIDADE 8: Maestria Certificada T8
-  if (pWinRate >= 65 && pW.uses >= 5) {
-    return {
-      type: 'success', icon: 'verified', color: '#10b981',
-      title: '✅ Maestria Certificada T8',
-      text: `Absolutamente essencial. ${pWinRate}% de WinRate com [${pW.weapon}] em ${pW.uses} lutas.${pW.relativePct > 0 ? ` Seu ${pW.compareLabel} é ${pW.relativePct}% ACIMA da média do core.` : ''} Você carrega a guilda.`,
+  // 11. [POSITIVO] SOBREVIVÊNCIA EXEMPLAR
+  if (survivalStatus === 'good' && totalBattles >= 4) {
+    list.push({
+      id: 'survival-good',
+      type: 'success',
+      icon: 'verified_user',
+      color: '#10b981',
+      category: '🛡️ Sobrevivência Exemplar',
+      title: 'Sobrevivência de Elite',
+      text: `Excelente índice de sobrevivência! Com apenas ${myDeathsPerBattle.toFixed(1)} mortes/luta, você preserva regear e mantém a pressão da Zerg em lutas prolongadas.`,
       weaponRaw: pW.rawWeapon
-    }
+    })
   }
 
-  // PRIORIDADE 9: Monitoramento Padrão Ativo (baseline contextualizado)
+  // 12. [POSITIVO] RENDIMENTO SUPERIOR AO CORE
+  if (pW.relativePct && pW.relativePct >= 20 && pW.uses >= 4) {
+    list.push({
+      id: 'rel-high',
+      type: 'success',
+      icon: 'bolt',
+      color: '#10b981',
+      category: '⚡ Rendimento de Destaque',
+      title: `Destaque: ${pW.compareLabel} Superior ao Core`,
+      text: `Performance exemplar: seu ${pW.compareLabel} com [${pW.weapon}] é ${pW.relativePct}% SUPERIOR à média dos demais membros da mesma classe.`,
+      weaponRaw: pW.rawWeapon
+    })
+  }
+
+  // 13. [POSITIVO] MAESTRIA T8
+  if (pWinRate >= 60 && pW.uses >= 4) {
+    list.push({
+      id: 'mastery',
+      type: 'success',
+      icon: 'military_tech',
+      color: '#10b981',
+      category: '🏅 Maestria em Campo',
+      title: `Maestria Validada em [${pW.weapon}] (${pWinRate}% WR)`,
+      text: `Arma de assinatura confirmada. Você acumula ${pWinRate}% de vitórias em ${pW.uses} batalhas oficiais utilizando esse equipamento.`,
+      weaponRaw: pW.rawWeapon
+    })
+  }
+
+  // 14. [BASELINE] MONITORAMENTO GERAL
   const winLabel = pWinRate >= 55 ? 'acima da média' : pWinRate >= 45 ? 'dentro do esperado' : 'abaixo do ideal'
-  const relativeComment = pW.relativePct > 0
-    ? ` Seu ${pW.compareLabel} está ${pW.relativePct}% acima da média dos que usam essa arma — sinal positivo.`
-    : pW.relativePct < -10
-    ? ` Atenção: ${pW.relativePct}% abaixo da média do core — foque em posicionamento.`
-    : ''
-  return {
-    type: 'neutral', icon: 'monitoring', color: 'var(--text-400)',
+  list.push({
+    id: 'baseline',
+    type: 'neutral',
+    icon: 'analytics',
+    color: 'var(--cyan)',
+    category: '📊 Visão Geral',
     title: 'Monitoramento Padrão Ativo',
-    text: `Análise baseada em ${totalBattles} CTAs. [${pW.weapon}] com ${pWinRate}% WR (${winLabel}).${relativeComment}${trendDir === 'up' ? ` Em ascensão recente (+${trendDiff}% nas últimas 5 batalhas).` : ''}`,
+    text: `Análise consolidada em ${totalBattles} CTAs oficiais. Arma primária [${pW.weapon}] com ${pWinRate}% de aproveitamento (${winLabel}).`,
     weaponRaw: pW.rawWeapon
-  }
+  })
+
+  return list
 }
 
 
@@ -547,7 +634,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
 
   const { totalBattles, winRate, weapons } = profile.globalStats
   const { coaching } = profile
-  const aiCoach = generateCoachAdvice({
+  const aiInsights = generateCoachAdviceList({
     weapons,
     totalBattles,
     ...coaching
@@ -558,110 +645,151 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
   const historyFeed = profile.rawMatches.slice(0, 10)
 
   return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }} className="anim-up">
-        <div style={{ 
-          width: 56, height: 56, borderRadius: 12, background: 'var(--cyan-20)', border: '2px solid var(--cyan)', 
-          display: 'flex', alignItems: 'center', justifyContent: 'center' 
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 32, color: 'var(--cyan)' }}>person</span>
-        </div>
-        <div>
-          <h1 className="section-hd" style={{ fontSize: 32, letterSpacing: 1, margin: 0, color: 'var(--text-900)' }}>
-            {playerName.toUpperCase()}
-          </h1>
-          <div className="label">
-            Painel Oficial de Mentoria Tática (Player Coaching Hub)
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* ── HEADER: Operador + Resumo Rápido ───────────── */}
+      <div className="glass panel anim-up" style={{ padding: '24px 32px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 'var(--radius-sm)',
+              background: 'var(--cyan-10)', border: '1px solid var(--cyan-20)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--cyan)', flexShrink: 0
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 32 }}>person</span>
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '0.04em', color: 'var(--text-900)' }}>
+                  {playerName.toUpperCase()}
+                </h1>
+              </div>
+              <p className="label-sm" style={{ marginTop: 4, color: 'var(--text-500)' }}>
+                Painel Oficial de Mentoria Tática (Player Coaching Hub)
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div className="label-sm" style={{ color: 'var(--text-400)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                Battle Stats
+                <HintIcon text="Média de Kills e Mortes por batalha de Zerg" />
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 18, fontWeight: 800, color: 'var(--text-900)', marginTop: 2 }}>
+                {profile.records.kills.val > 0 ? `${profile.coaching.kda} K/D` : '-'} <span style={{ fontSize: 12, color: 'var(--text-500)', fontWeight: 500 }}>AVG</span>
+              </div>
+            </div>
+
+            <div style={{ width: 1, height: 32, background: 'var(--border-lo)' }} />
+
+            <div style={{ textAlign: 'right' }}>
+              <div className="label-sm" style={{ color: 'var(--text-400)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                Win Rate
+                <HintIcon text="Percentual de vitórias nas batalhas em que este jogador esteve presente" />
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 20, fontWeight: 900, color: winRate >= 50 ? 'var(--cyan)' : '#ef4444', marginTop: 2 }}>
+                {winRate}%
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0,1fr) 340px',
-        gap: 20,
-      }}>
-
-        {/* ── LEFT: Stats & Lutas ──────────────────────── */}
+      {/* ── GRID PRINCIPAL: 2 Colunas ─────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr)', gap: 24, alignItems: 'start' }}>
+        
+        {/* ── LEFT: Radar + Badges + Sub-abas Dinâmicas ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 16 }}>
-            {/* RADAR CHART PANEL */}
-            <div className="glass panel anim-up">
-              <div className="panel-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span className="section-hd">Polígono de Playstyle (Radar)</span>
-                  <HintIcon text="Compara suas médias com a média do mesmo papel (Tank/DPS/Healer) na guilda" />
-                </div>
+          {/* RADAR + RIVALIDADES */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
+            {/* Radar Polygon */}
+            <div className="glass panel anim-up" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span className="section-hd">Polígono de Playstyle (Radar)</span>
+                <HintIcon text="Mapeamento de 5 eixos do jogador comparado à média do servidor" />
               </div>
-              <div className="panel-body" style={{ padding: 0 }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 220 }}>
                 <PlayerRadar data={profile.radarData} />
               </div>
             </div>
 
-            {/* RIVALIDADES / INIMIGOS PESSOAIS */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-               <div className="glass panel anim-up" style={{ flexGrow: 1 }}>
-                 <div className="panel-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.2)' }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                     <span className="section-hd" style={{ color: '#ef4444' }}>🔪 Presa Fácil</span>
-                     <HintIcon text="Guilda inimiga que mais causou suas mortes diretas (mín. 3 lutas)" />
-                   </div>
-                 </div>
-                 <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontSize: 13, color: 'var(--text-500)' }}>Guilda Oposta Causa-Morte:</div>
-                    {profile.enemies.nemesis ? (
-                      <div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-900)' }}>{profile.enemies.nemesis.guild}</div>
-                        <div style={{ color: '#ef4444', fontWeight: 600, fontSize: 14 }}>{profile.enemies.nemesis.deaths} Mortes Diretas</div>
-                      </div>
-                    ) : <div style={{ fontStyle: 'italic', color: 'var(--text-400)' }}>Poucas mortes para uma guilda única.</div>}
-                 </div>
-               </div>
+            {/* Inimigos / Rivais */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Presa Fácil */}
+              <div className="glass panel anim-up" style={{ padding: '14px 18px', flex: 1, borderLeft: '3px solid #10b981' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#10b981' }}>call_made</span>
+                  <span className="label-sm" style={{ color: 'var(--text-500)' }}>Presa Fácil</span>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <HintIcon text="Guilda inimiga contra a qual este jogador tem a maior taxa de vitórias" />
+                  </div>
+                </div>
+                {profile.enemies.prey ? (
+                  <>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-900)', letterSpacing: '0.02em' }}>
+                      {profile.enemies.prey.guild}
+                    </div>
+                    <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#10b981', marginTop: 3 }}>
+                      Ganha {profile.enemies.prey.winRate}% das vezes
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text-400)', fontStyle: 'italic', marginTop: 4 }}>Sem dados suficientes</div>
+                )}
+              </div>
 
-               <div className="glass panel anim-up" style={{ flexGrow: 1 }}>
-                  <div className="panel-header" style={{ borderBottomColor: 'rgba(16, 185, 129, 0.2)' }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                     <span className="section-hd" style={{ color: '#10b981' }}>🏹 Carrasco</span>
-                     <HintIcon text="Guilda inimiga contra qual você tem a maior taxa de vitória (mín. 2 lutas)" />
-                   </div>
-                 </div>
-                 <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontSize: 13, color: 'var(--text-500)' }}>Ganha a maioria contra:</div>
-                    {profile.enemies.prey ? (
-                      <div>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-900)' }}>{profile.enemies.prey.guild}</div>
-                        <div style={{ color: '#10b981', fontWeight: 600, fontSize: 14 }}>{profile.enemies.prey.winRate}% das vezes!</div>
-                      </div>
-                    ) : <div style={{ fontStyle: 'italic', color: 'var(--text-400)' }}>Nenhuma guilda sofre suficientemente para você ser o carrasco.</div>}
-                 </div>
-               </div>
+              {/* Carrasco */}
+              <div className="glass panel anim-up" style={{ padding: '14px 18px', flex: 1, borderLeft: '3px solid #ef4444' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#ef4444' }}>skull</span>
+                  <span className="label-sm" style={{ color: 'var(--text-500)' }}>Maior Ameaça (Nemesis)</span>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <HintIcon text="Guilda inimiga que mais causou mortes a este jogador" />
+                  </div>
+                </div>
+                {profile.enemies.nemesis ? (
+                  <>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-900)', letterSpacing: '0.02em' }}>
+                      {profile.enemies.nemesis.guild}
+                    </div>
+                    <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#ef4444', marginTop: 3 }}>
+                      {profile.enemies.nemesis.deaths} mortes diretas
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text-400)', fontStyle: 'italic', marginTop: 4 }}>Sem rival expressivo</div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* INDICADORES RÁPIDOS — 4 badges sempre visíveis */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }} className="anim-up">
+          {/* 6 BADGES RÁPIDOS */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
             {/* Badge 1: Tendência */}
             {(() => {
               const { trendDir, trendDiff, recentWR } = coaching
-              const isUp = trendDir === 'up', isDown = trendDir === 'down'
+              const isUp = trendDir === 'up'
+              const isDown = trendDir === 'down'
               const color = isUp ? '#10b981' : isDown ? '#ef4444' : 'var(--text-500)'
               const bg = isUp ? 'rgba(16,185,129,0.08)' : isDown ? 'rgba(239,68,68,0.08)' : 'rgba(100,116,139,0.06)'
               const border = isUp ? 'rgba(16,185,129,0.25)' : isDown ? 'rgba(239,68,68,0.25)' : 'rgba(100,116,139,0.15)'
               const icon = isUp ? 'trending_up' : isDown ? 'trending_down' : 'trending_flat'
-              const label = isUp ? `+${trendDiff}% Recente` : isDown ? `${trendDiff}% Recente` : 'Estável'
-              const sub = totalBattles >= 8 ? `${recentWR}% ult. 5 lutas` : 'Poucas batalhas'
+              const label = isUp ? 'Em Alta' : isDown ? 'Em Queda' : 'Estável'
               return (
                 <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>{ icon }</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>{icon}</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Tendência</span>
                     <div style={{ marginLeft: 'auto' }}>
-                      <HintIcon text={`Compara WinRate das últimas 5 batalhas vs histórico. ${totalBattles < 8 ? 'Precisa de 8+ batalhas para ativar.' : ''}`} />
+                      <HintIcon text={`Variação de WinRate das últimas 5 lutas vs histórico geral. Positivo = melhorando, Negativo = em queda.`} />
                     </div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
-                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{sub}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                    {recentWR}% ult. 5 lutas
+                  </div>
                 </div>
               )
             })()}
@@ -669,22 +797,25 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             {/* Badge 2: Assiduidade */}
             {(() => {
               const { attendanceRate } = coaching
-              const isHigh = attendanceRate >= 70, isLow = attendanceRate < 30
-              const color = isHigh ? '#10b981' : isLow ? '#ef4444' : 'var(--text-500)'
-              const bg = isHigh ? 'rgba(16,185,129,0.08)' : isLow ? 'rgba(239,68,68,0.08)' : 'rgba(100,116,139,0.06)'
-              const border = isHigh ? 'rgba(16,185,129,0.25)' : isLow ? 'rgba(239,68,68,0.25)' : 'rgba(100,116,139,0.15)'
-              const label = isHigh ? 'Assíduo 🏃' : isLow ? 'Irregular 👻' : 'Regular'
+              const isHigh = attendanceRate >= 70
+              const isLow = attendanceRate < 35
+              const color = isHigh ? '#10b981' : isLow ? '#ef4444' : 'var(--cyan)'
+              const bg = isHigh ? 'rgba(16,185,129,0.08)' : isLow ? 'rgba(239,68,68,0.08)' : 'rgba(0,242,255,0.06)'
+              const border = isHigh ? 'rgba(16,185,129,0.25)' : isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,242,255,0.15)'
+              const label = isHigh ? 'Exemplar' : isLow ? 'Irregular' : 'Regular'
               return (
                 <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>event_available</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Assiduidade</span>
                     <div style={{ marginLeft: 'auto' }}>
-                      <HintIcon text={`Participou em ${attendanceRate}% das batalhas da guilda. Acima de 70% = pilar do time. Abaixo de 30% = dados menos confiáveis.`} />
+                      <HintIcon text={`Participação nas ZvZs da guilda. Acima de 70% = presença assídua no core.`} />
                     </div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
-                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{attendanceRate}% das CTAs</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                    {attendanceRate}% das CTAs
+                  </div>
                 </div>
               )
             })()}
@@ -692,22 +823,25 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             {/* Badge 3: Sobrevivência */}
             {(() => {
               const { survivalStatus, myDeathsPerBattle } = coaching
-              const isCrit = survivalStatus === 'critical', isGood = survivalStatus === 'good'
-              const color = isCrit ? '#ef4444' : isGood ? '#10b981' : 'var(--text-500)'
-              const bg = isCrit ? 'rgba(239,68,68,0.08)' : isGood ? 'rgba(16,185,129,0.08)' : 'rgba(100,116,139,0.06)'
-              const border = isCrit ? 'rgba(239,68,68,0.25)' : isGood ? 'rgba(16,185,129,0.25)' : 'rgba(100,116,139,0.15)'
-              const label = isCrit ? '⚠️ Crítica' : isGood ? '🛡️ Exemplar' : 'Normal'
+              const isGood = survivalStatus === 'good'
+              const isCrit = survivalStatus === 'critical'
+              const color = isGood ? '#10b981' : isCrit ? '#ef4444' : 'var(--cyan)'
+              const bg = isGood ? 'rgba(16,185,129,0.08)' : isCrit ? 'rgba(239,68,68,0.08)' : 'rgba(0,242,255,0.06)'
+              const border = isGood ? 'rgba(16,185,129,0.25)' : isCrit ? 'rgba(239,68,68,0.25)' : 'rgba(0,242,255,0.15)'
+              const label = isGood ? 'Alta' : isCrit ? 'Crítica' : 'Normal'
               return (
                 <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>favorite</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Sobrevivência</span>
                     <div style={{ marginLeft: 'auto' }}>
-                      <HintIcon text={`Mortes por batalha: ${myDeathsPerBattle}. Crítico = 2× acima da média do seu role. Exemplar = menos da metade.`} />
+                      <HintIcon text={`Média de mortes por batalha comparada aos jogadores do mesmo papel (Tank/Healer/DPS).`} />
                     </div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
-                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{myDeathsPerBattle} mortes/luta</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                    {myDeathsPerBattle} mortes/luta
+                  </div>
                 </div>
               )
             })()}
@@ -715,37 +849,37 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             {/* Badge 4: KDA */}
             {(() => {
               const { kda } = coaching
-              const isElite = kda >= 3, isPoor = kda < 0.5
-              const color = isElite ? '#f97316' : isPoor ? '#ef4444' : 'var(--text-500)'
-              const bg = isElite ? 'rgba(249,115,22,0.08)' : isPoor ? 'rgba(239,68,68,0.06)' : 'rgba(100,116,139,0.06)'
-              const border = isElite ? 'rgba(249,115,22,0.3)' : isPoor ? 'rgba(239,68,68,0.2)' : 'rgba(100,116,139,0.15)'
-              const label = isElite ? '⚡ Elite' : isPoor ? 'Baixo' : 'Normal'
+              const isElite = kda >= 3.0
+              const isLow = kda < 1.0
+              const color = isElite ? '#10b981' : isLow ? '#ef4444' : 'var(--cyan)'
+              const bg = isElite ? 'rgba(16,185,129,0.08)' : isLow ? 'rgba(239,68,68,0.08)' : 'rgba(0,242,255,0.06)'
+              const border = isElite ? 'rgba(16,185,129,0.25)' : isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,242,255,0.15)'
+              const label = isElite ? 'Elite' : isLow ? 'Baixo' : 'Normal'
               return (
                 <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>sports_martial_arts</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>swords</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>KDA</span>
                     <div style={{ marginLeft: 'auto' }}>
-                      <HintIcon text={`KDA geral: Kills / Mortes. Acima de 3 = matador nato. Abaixo de 0.5 = morre mais do que derruba.`} />
+                      <HintIcon text={`Razão de Kills por Morte. Healers e Suportes naturalmente possuem KDA menor.`} />
                     </div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
-                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>{kda} ratio</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                    {kda} ratio
+                  </div>
                 </div>
               )
             })()}
 
-            {/* Badge 5: Morte Precoce (Early Death) */}
+            {/* Badge 5: Morte Precoce */}
             {(() => {
               const { taxaMortePrecoce, earlyDeathCount, totalKillEvents } = coaching
               const isAlert = taxaMortePrecoce >= 40 && totalKillEvents >= 2
               const isGood = taxaMortePrecoce === 0 && totalKillEvents >= 2
               const color = isAlert ? '#ef4444' : isGood ? '#10b981' : 'var(--text-500)'
-              const bg = isAlert ? 'rgba(239,68,68,0.08)' : isGood ? 'rgba(16,185,129,0.08)' : 'rgba(100,116,139,0.06)'
-              const border = isAlert ? 'rgba(239,68,68,0.25)' : isGood ? 'rgba(16,185,129,0.25)' : 'rgba(100,116,139,0.15)'
-              const label = isAlert ? '⚠️ Precoce' : isGood ? '🛡️ Seguro' : totalKillEvents === 0 ? 'Sem dados' : 'Normal'
               return (
-                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                <div className="glass" style={{ padding: '12px 14px', background: isAlert ? 'rgba(239,68,68,0.08)' : 'rgba(100,116,139,0.06)', borderColor: isAlert ? 'rgba(239,68,68,0.25)' : 'rgba(100,116,139,0.15)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>timer_off</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Morte Cedo</span>
@@ -753,7 +887,7 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                       <HintIcon text={`% de mortes nos primeiros 60s da luta (quando ainda tinha todas as defensivas). Acima de 40% = alerta de posicionamento na abertura.`} />
                     </div>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color, lineHeight: 1 }}>{isAlert ? '⚠️ Precoce' : isGood ? '🛡️ Seguro' : totalKillEvents === 0 ? 'Sem dados' : 'Normal'}</div>
                   <div style={{ fontSize: 9, color: 'var(--text-400)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
                     {totalKillEvents > 0 ? `${taxaMortePrecoce}% (${earlyDeathCount}/${totalKillEvents})` : 'Aguardando logs'}
                   </div>
@@ -766,11 +900,9 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
               const { topCarrasco, topCarrascoWeapon, topCarrascoPct, topCarrascoCount } = coaching
               const hasCarrasco = !!topCarrasco && topCarrascoCount >= 2
               const color = hasCarrasco ? '#f97316' : 'var(--text-500)'
-              const bg = hasCarrasco ? 'rgba(249,115,22,0.08)' : 'rgba(100,116,139,0.06)'
-              const border = hasCarrasco ? 'rgba(249,115,22,0.25)' : 'rgba(100,116,139,0.15)'
               const carrascoNome = topCarrasco ? topCarrasco.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : 'Nenhuma'
               return (
-                <div className="glass" style={{ padding: '12px 14px', background: bg, borderColor: border }}>
+                <div className="glass" style={{ padding: '12px 14px', background: hasCarrasco ? 'rgba(249,115,22,0.08)' : 'rgba(100,116,139,0.06)', borderColor: hasCarrasco ? 'rgba(249,115,22,0.25)' : 'rgba(100,116,139,0.15)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span className="material-symbols-outlined" style={{ fontSize: 14, color }}>gavel</span>
                     <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color }}>Arma Fatal</span>
@@ -792,134 +924,14 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
             })()}
           </div>
 
-          {/* AI COACH BOX — Diagnóstico Principal */}
-          {aiCoach && (
-            <div className="glass panel anim-up" style={{ 
-              borderLeft: `4px solid ${aiCoach.color}`,
-              background: 'var(--surface-hi)',
-              boxShadow: 'var(--shadow-glass)',
-              animationDelay: '40ms'
-            }}>
-              <div className="panel-body" style={{ padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: 'var(--radius-sm)',
-                      background: `rgba(${aiCoach.color === '#ef4444' ? '239,68,68' : aiCoach.color === '#10b981' ? '16,185,129' : '0,242,255'}, 0.12)`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }}>
-                      <span className="material-symbols-outlined" style={{ color: aiCoach.color, fontSize: 20 }}>{aiCoach.icon}</span>
-                    </div>
-                    <div>
-                      <div className="label-sm" style={{ color: aiCoach.color, fontWeight: 700, letterSpacing: '0.12em' }}>
-                        Diagnóstico Tático de IA
-                      </div>
-                      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-900)', marginTop: 2 }}>
-                        {aiCoach.title}
-                      </div>
-                    </div>
-                  </div>
-                  {aiCoach.weaponRaw && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'rgba(0,0,0,0.03)', borderRadius: 6, border: '1px solid var(--border-lo)' }}>
-                      <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-400)', textTransform: 'uppercase' }}>Item em Foco</span>
-                      <WeaponIcon rawWeapon={aiCoach.weaponRaw} size={36} />
-                    </div>
-                  )}
-                </div>
-                <p style={{ color: 'var(--text-700)', fontSize: 13, lineHeight: 1.6, fontWeight: 500 }}>
-                  {aiCoach.text}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* FASES DE COMBATE INDIVIDUAIS (0-30s, 31-60s, 61-120s, 120s+) */}
-          <div className="anim-up" style={{ animationDelay: '60ms' }}>
-            <BattleTimeline
-              allBattles={profile.playerBattles}
-              killEvents={profile.playerKillEvents}
-              playerName={playerName}
-            />
-          </div>
-
-          {/* HISTÓRICO DE ARMAS + RELATIVO DA GUILDA */}
-          <div className="glass panel anim-up" style={{ animationDelay: '80ms' }}>
-            <div className="panel-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span className="section-hd">Eficiência de Armamento (Meta Specs vs Core)</span>
-                <HintIcon text="Estatísticas por arma. Relativo Core = seu dano/cura comparado à média de quem usa a mesma arma na guilda" />
-              </div>
-            </div>
-            <div className="panel-body scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Classe & Arma</th>
-                    <th style={{ textAlign: 'center' }}>ZvZs</th>
-                    <th style={{ textAlign: 'center' }}>KDA</th>
-                    <th style={{ textAlign: 'right' }}>DPS/Luta</th>
-                    <th style={{ textAlign: 'right' }}>Heal/Luta</th>
-                    <th style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
-                        Relativo Core
-                        <HintIcon text="Seu Dano/Cura médio vs média dos que usam essa mesma arma na guilda" />
-                      </div>
-                    </th>
-                    <th style={{ textAlign: 'right' }}>WinRate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {weapons.map(w => {
-                    const wr = Math.round((w.wins / w.uses) * 100)
-                    const kda = w.deaths === 0 ? w.kills : (w.kills / w.deaths).toFixed(2)
-                    const avgDamage = Math.round(w.damage / w.uses).toLocaleString()
-                    const avgHeal = Math.round(w.healing / w.uses).toLocaleString()
-
-                    const albion2d_link = `https://albiononline2d.com/pt/item/id/T8_${w.rawWeapon.replace(/^T\d_/, '').split('@')[0]}`;
-                    
-                    const isPositive = w.relativePct > 0;
-                    
-                    return (
-                      <tr key={w.weapon}>
-                        <td>
-                          <span style={{ opacity: 0.6, fontSize: 9, display: 'block', marginBottom: 2, color: 'var(--text-400)', textTransform: 'uppercase' }}>
-                            {w.role}
-                          </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <WeaponIcon rawWeapon={w.rawWeapon} size={32} />
-                            <a href={albion2d_link} data-tooltip="Ver item no Albion2D" target="_blank" rel="noreferrer" style={{ fontWeight: 700, color: 'var(--amber)', textDecoration: 'none' }} className="hover:text-cyan">
-                              {w.weapon}
-                            </a>
-                          </div>
-                        </td>
-                        <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 800 }}>{w.uses}x</td>
-                        <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{kda}</td>
-                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: w.damage > 0 ? '#f97316' : 'var(--text-400)' }}>
-                          {w.damage > 0 ? avgDamage : '-'}
-                        </td>
-                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: w.healing > 0 ? '#10b981' : 'var(--text-400)' }}>
-                          {w.healing > 0 ? avgHeal : '-'}
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <span className={`badge badge-${isPositive ? 'healer' : 'tank'}`} style={{ display: 'inline-flex', padding: '4px 6px' }}>
-                             {isPositive ? '+' : ''}{w.relativePct}% {w.compareLabel}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <span style={{ 
-                            fontFamily: 'var(--font-mono)', fontWeight: 800, 
-                            color: wr >= 60 ? '#10b981' : wr < 40 ? '#ef4444' : 'var(--cyan)'
-                          }}>
-                            {wr}%
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* PAINEL DINÂMICO DE ABAS (MENTORIA & FASES vs EFICIÊNCIA DE ARMAS) */}
+          <PlayerTabsView
+            playerName={playerName}
+            insights={aiInsights}
+            playerBattles={profile.playerBattles}
+            playerKillEvents={profile.playerKillEvents}
+            weapons={weapons}
+          />
         </div>
 
         {/* ── RIGHT: Snapshot KPI & Match History ────────── */}
@@ -1026,9 +1038,9 @@ export default async function PlayerProfilePage(props: { params: Promise<{ name:
                <span className="label" style={{ fontSize: 10 }}>Mostrando as {historyFeed.length} ZvZs mais recentes</span>
             </div>
           </div>
-          
+
         </div>
       </div>
-    </>
+    </div>
   )
 }
